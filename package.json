@@ -1,0 +1,48 @@
+{
+  "name": "drum-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "drum-trainer",
+  "main": "index.js",
+  "scripts": {
+    "watch": "webpack --config webpack/webpack.dev.js --watch",
+    "build": "webpack --config webpack/webpack.prod.js",
+    "clean": "rimraf dist",
+    "test": "jest",
+    "style": "prettier --write \"src/**/*.{ts,tsx}\""
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fluentui/react-components": "^9.39.0",
+    "@fluentui/react-icons": "^2.0.222",
+    "@notionhq/client": "^2.2.13",
+    "js-yaml": "^4.1.0",
+    "lodash": "^4.17.21",
+    "luxon": "^3.4.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "scheduler": "0.20.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.248",
+    "@types/jest": "^29.5.0",
+    "@types/js-yaml": "^4",
+    "@types/lodash": "^4",
+    "@types/luxon": "^3",
+    "@types/react": "^18.0.29",
+    "@types/react-dom": "^18.0.11",
+    "@types/scheduler": "^0",
+    "copy-webpack-plugin": "^9.0.1",
+    "glob": "^7.1.6",
+    "jest": "^29.5.0",
+    "prettier": "^2.2.1",
+    "rimraf": "^3.0.2 ",
+    "ts-jest": "^29.1.0",
+    "ts-loader": "^8.0.0",
+    "typescript": "^5.2.2",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-merge": "^5.10.0"
+  },
+  "packageManager": "yarn@4.0.1"
+}

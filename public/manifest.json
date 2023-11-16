@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+
+  "name": "Metronome Trainer",
+  "description": "Helps drummers and other musicians to exercise and track progress in Notion pages.",
+  "version": "0.0.1",
+
+  "options_ui": {
+    "page": "options.html"
+  },
+
+  "action": {
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "default_popup": "popup.html"
+  },
+
+  "content_scripts": [
+      {
+          "matches": ["https://www.notion.so/*"],
+          "js": ["js/vendor.js", "js/content_script.js"]
+      }
+  ],
+
+  "background": {
+    "service_worker": "js/background.js"
+  },
+
+  "permissions": [
+    "storage"
+  ],
+
+  "host_permissions": [
+    "https://www.notion.so/*",
+    "https://api.notion.com/*"
+  ]
+}
