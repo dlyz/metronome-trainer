@@ -21,33 +21,12 @@ It may take some time for the first time, but once you set it up, workflow becom
       and store all the exercises as a nested pages.
       Do not connect your important private pages to the integration
       in order to reduce security and data loss risks.
-   2. Add database to the page.
-      1. Rename `Title` property to `BPM`.
-      2. Add property `Date` of type `Date`.
-      3. And property `nBPM` of type `Formula`,
-         set formula value to `toNumber(prop("BPM"))`,
-         hide the property from the view.
-      4. Optionally create more views in the database with filter on `nBPM` value
-         to split a single view to a few "pages".
-   3. Add a code block, set language to `yaml` and use content like this:
-
-      ```yaml
-      bpms: 60-120/5, 120-150/2, 150-200
-      bar: 4/4
-      div: 2
-      accents: [3,1,2,1]
-      t: 1m
-      ```
-
-      This is exercise settings, change it as you need.
-      All fields are optional, but you probably want to keep exercise duration (`t`).
-      Also keep `bpms` in order to automatically fill your database in next steps.
+   2. Open the extension popup and click "Create exercise on current page" button.
+      Wait for it to finish and follow instructions on the page.
 
 5. You may need to reload the page in order for metronome to appear
    (it might have a delay due to Notion API speed).
-   If there is no rows in your database yet, only buttons will appear in bottom-right corner.
-6. Click to the button `Refill BPM table`.
-7. Enjoy!
+6. Enjoy!
 
 > :bulb: You can create a "template" page with configured database view and typical settings
 > and duplicate it whenever you need to create a new exercise.

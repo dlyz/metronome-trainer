@@ -85,7 +85,11 @@ t: 1m
 `.trim();
 
 		const instructions = `
-Recommended actions:
+To the left is an exercise settings block, change them as you need.
+All fields are optional, but you probably want to keep exercise duration 't'.
+After changing 'bpms' you can also refill the BPM table using the button above metronome.
+
+Recommended optional actions:
 In page properties enable "Full width".
 Drag "BPM table" database here and delete this block.
 Hide database title.
