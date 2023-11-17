@@ -1,6 +1,6 @@
 import { Input, Label, makeStyles, shorthands, useId } from "@fluentui/react-components";
-import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import React, { useCallback, useEffect, useState } from "react";
 import { renderApp } from "./components/App";
 
 
@@ -57,3 +57,4 @@ const Options = () => {
 const root = createRoot(document.getElementById("root")!);
 
 renderApp(root, <Options />);
+

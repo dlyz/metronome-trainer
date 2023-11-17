@@ -3,7 +3,7 @@ import { EventControl } from "../Event";
 import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto } from "../models/BpmTable";
 import { Exercise, ExerciseDto, ExerciseTask } from "../models/Exercise";
 import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
-import { ClientEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest } from "./messages";
+import { ClientEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest, ExceptionResponse } from "./messages";
 
 
 export async function startClient(client: {
@@ -31,7 +31,7 @@ export async function startClient(client: {
 		}
 	});
 
-	const initPage = await chrome.runtime.sendMessage<ExercisePageRequest, ExercisePageDto>({ type: "getExercisePage" });
+	const initPage = await sendRequest<ExercisePageRequest, ExercisePageDto>({ type: "getExercisePage" });
 	if (!page && initPage) {
 		page = new ProxyExercisePage(initPage);
 		client.onExercisePageInitialized(page);
@@ -41,6 +41,15 @@ export async function startClient(client: {
 		setInterval(() => {
 			chrome.runtime.sendMessage<KeepAliveRequest, boolean>({ type: "keepAlive" });
 		}, 15000);
+	}
+}
+
+async function sendRequest<TRequest, TResponse extends object | undefined = undefined>(request: TRequest): Promise<TResponse> {
+	const response = await chrome.runtime.sendMessage<TRequest, TResponse | ExceptionResponse>(request);
+	if (response && ("type" in response) && response.type === "error") {
+		throw new Error("remote exception: " + response.message);
+	} else {
+		return response as TResponse;
 	}
 }
 
@@ -65,10 +74,19 @@ class ProxyExercisePage implements ExercisePage {
 	readonly onChanged = new EventControl();
 
 	refreshPage(): Promise<void> {
-		return chrome.runtime.sendMessage<InvokeAsyncMethodRequest<ExercisePage, "refreshPage">>({
+		return sendRequest<InvokeAsyncMethodRequest<ExercisePage, "refreshPage">>({
 			type: "invokeAsyncMethod",
 			target: "page",
 			method: "refreshPage",
+			arguments: [],
+		});
+	}
+
+	createExercise(): Promise<void> {
+		return sendRequest<InvokeAsyncMethodRequest<ExercisePage, "createExercise">>({
+			type: "invokeAsyncMethod",
+			target: "page",
+			method: "createExercise",
 			arguments: [],
 		});
 	}
@@ -99,7 +117,7 @@ class ProxyExercise implements Exercise {
 	bpmTable?: ProxyBpmTable;
 
 	refreshTask(): Promise<void> {
-		return chrome.runtime.sendMessage<InvokeAsyncMethodRequest<Exercise, "refreshTask">>({
+		return sendRequest<InvokeAsyncMethodRequest<Exercise, "refreshTask">>({
 			type: "invokeAsyncMethod",
 			target: "exercise",
 			method: "refreshTask",
@@ -108,7 +126,7 @@ class ProxyExercise implements Exercise {
 	}
 
 	finishTask(task: ExerciseTask): Promise<void> {
-		return chrome.runtime.sendMessage<InvokeAsyncMethodRequest<Exercise, "finishTask">>({
+		return sendRequest<InvokeAsyncMethodRequest<Exercise, "finishTask">>({
 			type: "invokeAsyncMethod",
 			target: "exercise",
 			method: "finishTask",
@@ -130,7 +148,7 @@ class ProxyBpmTable implements ExerciseBpmTable {
 	}
 
 	refill(spec: BpmTableSpec): Promise<void> {
-		return chrome.runtime.sendMessage<InvokeAsyncMethodRequest<ExerciseBpmTable, "refill">>({
+		return sendRequest<InvokeAsyncMethodRequest<ExerciseBpmTable, "refill">>({
 			type: "invokeAsyncMethod",
 			target: "bpmTable",
 			method: "refill",

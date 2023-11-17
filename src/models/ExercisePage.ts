@@ -13,6 +13,8 @@ export interface ExercisePage {
 
 	refreshPage(): Promise<void>;
 
+	createExercise(): Promise<void>;
+
 	exportDto(): ExercisePageDto;
 }
 

@@ -27,6 +27,11 @@ export interface TabExercisePageChangedEvent {
 	page: ExercisePageDto,
 }
 
+export interface ExceptionResponse {
+	type: "error",
+	message?: string,
+}
+
 export type InvokeAsyncMethodRequest<
 	TTarget extends (ExercisePage | Exercise | ExerciseBpmTable) & ObjectWithAsyncMethod<TMethod>,
 	TMethod extends AsyncMethodKeysOf<TTarget> = AsyncMethodKeysOf<TTarget>,
@@ -43,7 +48,7 @@ export type InvokeAsyncMethodRequest<
 	arguments: Parameters<TMethodSignature>,
 }
 
-type q = InvokeAsyncMethodRequest<ExerciseBpmTable>;
+
 
 
 export type AnyInvokeAsyncMethodRequest = never

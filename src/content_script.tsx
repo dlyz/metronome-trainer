@@ -35,8 +35,8 @@ async function start() {
 				container.id = "drum-trainer-container";
 				container.style.zIndex = "1000";
 				container.style.position = "absolute";
-				container.style.bottom = "8px";
-				container.style.right = "8px";
+				container.style.bottom = "10px";
+				container.style.right = "10px";
 				document.body.appendChild(container);
 			}
 

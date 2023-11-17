@@ -22,15 +22,14 @@ It may take some time for the first time, but once you set it up, workflow becom
       Do not connect your important private pages to the integration
       in order to reduce security and data loss risks.
    2. Add database to the page.
-      1. Rename `Title` property to `BPM`
-      2. Add property `Date` of type `Date`
+      1. Rename `Title` property to `BPM`.
+      2. Add property `Date` of type `Date`.
       3. And property `nBPM` of type `Formula`,
          set formula value to `toNumber(prop("BPM"))`,
-         hide the property from the view
+         hide the property from the view.
       4. Optionally create more views in the database with filter on `nBPM` value
          to split a single view to a few "pages".
-      5. Add a row with title `60`.
-   3. Add a code block, set language to `yaml` and content like this.
+   3. Add a code block, set language to `yaml` and use content like this:
 
       ```yaml
       bpms: 60-120/5, 120-150/2, 150-200
@@ -52,6 +51,19 @@ It may take some time for the first time, but once you set it up, workflow becom
 
 > :bulb: You can create a "template" page with configured database view and typical settings
 > and duplicate it whenever you need to create a new exercise.
+
+## Build
+
+```cmd
+node --version
+corepack enable
+yarn --version
+yarn
+yarn build
+```
+
+node version should be >= 18
+yarn version should be >= 4
 
 ## Useful links
 

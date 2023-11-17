@@ -3,7 +3,7 @@
 
   "name": "Metronome Trainer",
   "description": "Helps drummers and other musicians to exercise and track progress in Notion pages.",
-  "version": "0.0.2",
+  "version": "0.0.3",
 
   "options_ui": {
     "page": "options.html"

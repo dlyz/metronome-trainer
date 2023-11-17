@@ -1,5 +1,5 @@
 import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
-import { ServerRequest, TabExercisePageChangedEvent } from "./messages";
+import { ExceptionResponse, ServerRequest, TabExercisePageChangedEvent } from "./messages";
 
 export function startServer(server: {
 	getExercisePage: (tabId: number) => ExercisePage | undefined
@@ -62,7 +62,7 @@ function runAsyncRequest(
 	sendResponse: (response?: any) => void
 ) {
 	action().catch(e => {
-		sendResponse();
+		sendResponse({ type: "error", message: e?.message } satisfies ExceptionResponse);
 		throw e;
 	});
 	return true;

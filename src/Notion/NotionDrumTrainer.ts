@@ -11,7 +11,7 @@ import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
 import { Exercise, ExerciseDto, ExerciseSettings, ExerciseTask, parseExerciseSettings } from "../models/Exercise";
 import _ from "lodash";
 import { EventControl } from "../Event";
-import { NotionBpmDatabase, NotionBpmDatabaseItem } from "./NotionBpmDatabase";
+import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
 
 
 
@@ -52,23 +52,19 @@ class NotionPage implements ExercisePage {
 	async refreshPage(): Promise<void> {
 
 		console.log(`refreshing page ${this.pageId}`);
-		const pageBlocks = await getBlockChildrenUnwrapColumns(this.api, this.pageId);
-		const dbBlocks = pageBlocks.filter(b => b.type === "child_database");
-		const databases = await Promise.all(dbBlocks.map(db => this.api.client.databases.retrieve({ database_id: db.id })));
 
-		const bpmDatabase = databases.find(db => "nBPM" in db.properties) as DatabaseObjectResponse | undefined;
+		const blocks = await parsePage(this.api, this.pageId);
 
-		const settingsBlock = pageBlocks.find(b => b.type === "code" && b.code.language === "yaml");
-		const bpmTable = bpmDatabase ? new NotionBpmDatabase(this.api, bpmDatabase) : undefined;
+		const bpmTable = blocks.bpmDatabase ? new NotionBpmDatabase(this.api, blocks.bpmDatabase) : undefined;
 
 		let exercise;
-		if (!settingsBlock && !bpmTable) {
+		if (!blocks.settingsBlock && !bpmTable) {
 			exercise = undefined;
 		} else {
-			exercise = this.exercise ?? new NotionExercise(this.api, this.onChanged);
+			exercise = this.exercise ?? new NotionExercise(this.api, this.onChanged, blocks);
 			await bpmTable?.updateEmptyItems();
 
-			exercise.doUpdate(settingsBlock, bpmTable);
+			exercise.doUpdate(blocks, blocks.settingsBlock, bpmTable);
 		}
 
 		this.exercise = exercise;
@@ -77,18 +73,93 @@ class NotionPage implements ExercisePage {
 		this.onChanged.invoke();
 	}
 
+
+	async createExercise(): Promise<void> {
+
+		const defaultSettingContent = `
+bpms: 60-70/2, 70-80
+bar: 4/4
+div: 2
+accents: [3,1,2,1]
+t: 1m
+`.trim();
+
+		const instructions = `
+Recommended actions:
+In page properties enable "Full width".
+Drag "BPM table" database here and delete this block.
+Hide database title.
+Sort database view by "nBPM" property.
+Hide "nBPM" property from the view.
+Split rows into multiple pages by duplicating "Default view" and assigning each view advanced filter on the range of "nBPM" property (to enable '<' '>' filtration you might need to trigger "nBPM" formula update by adding trailing space).
+
+Duplicate configured exercise page and in future create new exercises by simply duplicating that page.
+`.trim();
+
+		const result = await this.api.client.blocks.children.append({
+			block_id: this.pageId,
+			children: [
+				{
+					column_list: {
+						children: [
+							{
+								column: {
+									children: [{
+										paragraph: {
+											rich_text: [{
+												type: "text",
+												text: {
+													content: instructions,
+												}
+											}]
+										}
+									}]
+								}
+							},
+							{
+								column: {
+									children: [{
+										code: {
+											language: "yaml",
+											rich_text: [{
+												type: "text",
+												text: {
+													content: defaultSettingContent
+												}
+											}]
+										}
+									}]
+								}
+							}
+						]
+					}
+				}
+			]
+		});
+
+		await this.refreshPage();
+		if (!this.exercise) {
+			throw new Error("Settings block have been created, but after the refresh is has not been found.");
+		}
+
+		const spec = this.exercise.bpmTableSpec ?? { groups: [{chunks: [{ from: 60, to: 60, step: 1}]}] };
+		await this.exercise.refillDatabase(spec);
+		await this.refreshPage();
+	}
 }
+
 
 
 class NotionExercise implements Exercise {
 	constructor(
 		readonly api: NotionApi,
 		readonly onChanged: EventControl,
+		private pageBlocks: PageBlockStructure,
 	) {
 
 	}
 
-	private settingsBlock?: BlockObjectResponse;
+
 	private currentTaskBpm?: NotionBpmDatabaseItem;
 
 	currentTask?: ExerciseTask;
@@ -101,11 +172,13 @@ class NotionExercise implements Exercise {
 		console.log(`refreshing task`);
 
 		const bpmTableUpdatePromise = this.bpmTable?.updateEmptyItems();
-		const settingsBlockRequestPromise = this.settingsBlock && this.api.client.blocks.retrieve({ block_id: this.settingsBlock.id });
+
+		const settingsBlockId = this.pageBlocks.settingsBlock?.id;
+		const settingsBlockRequestPromise = settingsBlockId && this.api.client.blocks.retrieve({ block_id: settingsBlockId });
 
 		const [, newSettingsBlock] = await Promise.all([bpmTableUpdatePromise, settingsBlockRequestPromise]);
 
-		this.doUpdate(newSettingsBlock as BlockObjectResponse, this.bpmTable);
+		this.doUpdate(undefined, newSettingsBlock as BlockObjectResponse, this.bpmTable);
 
 		console.log(`task refreshed, broadcasting event`);
 		this.onChanged.invoke();
@@ -113,9 +186,11 @@ class NotionExercise implements Exercise {
 
 
 	doUpdate(
+		blockStructure?: PageBlockStructure,
 		settingsBlock?: BlockObjectResponse,
 		bpmTable?: NotionBpmDatabase,
 	) {
+		const errors: string[] = [];
 
 		let settings: ExerciseSettings | undefined;
 		if (settingsBlock && settingsBlock.type === "code") {
@@ -123,11 +198,9 @@ class NotionExercise implements Exercise {
 			try {
 				settings = jsYaml.load(settingText) as ExerciseSettings;
 			} catch (ex) {
-				console.warn("can not parse yaml block as yaml:", settingText);
+				errors.push("invalid yaml: ", settingText);
 			}
 		}
-
-		const errors: string[] = [];
 
 		const { metronomeOptions, duration, bpmTableSpec } = parseExerciseSettings(
 			settings ?? {},
@@ -163,8 +236,8 @@ class NotionExercise implements Exercise {
 			this.errors = errors;
 			this.bpmTable = bpmTable;
 
-			if (settings) {
-				this.settingsBlock = settingsBlock;
+			if (blockStructure) {
+				this.pageBlocks = blockStructure;
 			}
 
 			if (!_.isEqual(this.currentTask, task)) {
@@ -213,13 +286,65 @@ class NotionExercise implements Exercise {
 		}
 	}
 
+	refillDatabase(spec: BpmTableSpec): Promise<void> {
+		if (this.bpmTable) {
+			return this.bpmTable.refill(spec);
+		} else {
+			return this.#createAndFillDatabase(spec);
+		}
+	}
+
+	async #createAndFillDatabase(spec: BpmTableSpec): Promise<void> {
+		let parent = this.pageBlocks.pageId;
+		const settingsColumn = this.pageBlocks.settingsColumn;
+		if (settingsColumn) {
+			const otherColumn = settingsColumn.columnList.childrenBlocks?.[settingsColumn.columnIndex === 0 ? 1 : 0];
+			if (otherColumn) {
+				parent = otherColumn.id;
+			}
+		}
+
+		// can not use parent because api does not support creation in specific block.
+
+		const result = await this.api.client.databases.create({
+			parent: {
+				type: "page_id",
+				page_id: this.pageBlocks.pageId,
+			},
+			is_inline: true,
+			title: [{
+				text: {
+					content: "BPM table"
+				}
+			}],
+			properties: {
+				"BPM": {
+					"type": "title",
+					"title": {}
+				},
+				"Date": {
+					"type": "date",
+					"date": {}
+				},
+				"nBPM": {
+					"type": "formula",
+					"formula": {
+						"expression": "toNumber({{notion:block_property:title}})",
+					}
+				},
+			}
+		});
+
+		await refillDatabase(this.api, result.id, result.properties, spec);
+	}
+
 	exportDto(): ExerciseDto {
 		return {
 			type: "exercise",
 			source: {
 				type: "notion",
 				bpmDatabaseId: this.bpmTable?.id,
-				settingsBlockId: this.settingsBlock?.id,
+				settingsBlockId: this.pageBlocks.settingsBlock?.id,
 			},
 			currentTask: this.currentTask,
 			errors: this.errors,
@@ -230,24 +355,105 @@ class NotionExercise implements Exercise {
 
 }
 
-async function getBlockChildrenUnwrapColumns(api: NotionApi, blockId: string): Promise<BlockObjectResponse[]> {
+interface PageBlockStructure {
+	pageId: string,
+	settingsBlock?: HBlock,
+	settingsColumn?: BlockColumnParent,
+	bpmDatabaseBlock?: HBlock,
+	bpmDatabaseColumn?: BlockColumnParent,
+	bpmDatabase?: DatabaseObjectResponse,
+}
+
+interface BlockColumnParent {
+	columnList: HBlock,
+	columnIndex: number,
+}
+
+async function parsePage(api: NotionApi, pageId: string): Promise<PageBlockStructure> {
+	const pageBlocksTree = await getBlockDescendants(api, pageId);
+	const pageBlocksFlat = flattenBlocks(pageBlocksTree);
+	const settingsBlock = pageBlocksFlat.find(b => b.type === "code" && b.code.language === "yaml");
+
+
+	const dbBlocks = pageBlocksFlat.filter(b => b.type === "child_database");
+	const databases = await Promise.all(dbBlocks.map(dbBlock => api.client.databases.retrieve({ database_id: dbBlock.id })));
+
+	const bpmDatabaseIndex = databases.findIndex(db => "nBPM" in db.properties);
+	const bpmDatabaseBlock = dbBlocks[bpmDatabaseIndex];
+	const bpmDatabase = databases[bpmDatabaseIndex] as DatabaseObjectResponse | undefined;
+
+	let settingsColumn = settingsBlock?.parentBlock;
+	let settingsColumnList = settingsColumn?.parentBlock;
+	if (settingsColumn?.type === "column" && settingsColumnList?.type === "column_list") {
+	} else {
+		settingsColumn = settingsColumnList = undefined;
+	}
+
+	return {
+		pageId,
+		settingsBlock,
+		bpmDatabaseBlock,
+		bpmDatabase,
+		settingsColumn: getColumn(settingsBlock),
+		bpmDatabaseColumn: getColumn(bpmDatabaseBlock),
+	}
+
+
+	function getColumn(block?: HBlock) {
+
+		let column = block?.parentBlock;
+		let columnList = settingsColumn?.parentBlock;
+		if (column?.type === "column" && columnList?.type === "column_list" && columnList.childrenBlocks) {
+			return { columnList, columnIndex: columnList.childrenBlocks.indexOf(column) };
+		} else {
+			return undefined;
+		}
+	}
+
+	function getBlockParentId(block: BlockObjectResponse) {
+		switch (block.parent.type) {
+			case "block_id": return block.parent.block_id;
+			case "database_id": return block.parent.database_id;
+			case "page_id": return block.parent.page_id;
+			default: return undefined;
+		}
+	}
+}
+
+
+type HBlock = BlockObjectResponse & {
+	childrenBlocks?: HBlock[],
+	parentBlock?: HBlock,
+}
+
+function flattenBlocks(blocks: HBlock[]): HBlock[] {
+	return blocks.flatMap(b => b.childrenBlocks ? flattenBlocks(b.childrenBlocks) : b);
+}
+
+async function getBlockDescendants(api: NotionApi, blockId: string): Promise<HBlock[]> {
 
 	// todo: convert to semiserial provider
-	const response = await getAllPages(api.getBlockChildren(blockId));
+	const response: HBlock[] = await getAllPages(api.getBlockChildren(blockId));
 
-	const inner: [number, Promise<BlockObjectResponse[]>][] = [];
+
+	const childrenRequests: [number, Promise<HBlock[]>][] = [];
 
 	response.forEach((b, i) => {
 		if (b.type === "column_list" || b.type === "column") {
-			inner.push([i, getBlockChildrenUnwrapColumns(api, b.id)]);
+			childrenRequests.push([i, getBlockDescendants(api, b.id)]);
 		}
 	});
 
-	if (inner.length) {
-		const innerResults = await Promise.all(inner.map(i => i[1]));
-		for (let index = inner.length - 1; index >= 0; index--) {
-			const element = inner[index];
-			response.splice(element[0], 1, ...innerResults[index]);
+	if (childrenRequests.length) {
+		const childrenResponses = await Promise.all(childrenRequests.map(i => i[1]));
+		for (let childrenRequestIndex = childrenRequests.length - 1; childrenRequestIndex >= 0; childrenRequestIndex--) {
+			const childrenRequest = childrenRequests[childrenRequestIndex];
+			const parent = response[childrenRequest[0]];
+			const children = childrenResponses[childrenRequestIndex];
+			parent.childrenBlocks = children;
+			for (const child of children) {
+				child.parentBlock = parent;
+			}
 		}
 	}
 

@@ -14,8 +14,8 @@ class BackgroundExercisePage {
 	constructor(
 		readonly page: ExercisePage
 	) {
-		this.page.refreshPage();
 		this.page.onChanged.add(this.#handler);
+		this.page.refreshPage();
 	}
 
 	#handler = () => {
@@ -63,19 +63,27 @@ async function start() {
 	console.log("api created");
 
 	chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+
+		let pageToRefresh;
 		if (changeInfo.url) {
-			updateTab(tabId, changeInfo.url);
+			const [updated, pageId] = updateTab(tabId, changeInfo.url);
+			if (pageId && !updated && changeInfo.status === "complete") {
+				pageToRefresh = trackedPages.get(pageId);
+			}
+
 		} else if (changeInfo.status === "complete") {
 
-			const pageId = drumTrainer.getPageIdFromUrl(changeInfo.url);
+			const pageId = drumTrainer.getPageIdFromUrl(tab.url);
 			if (pageId) {
-				const page = trackedPages.get(pageId);
-				if (page) {
-					console.log(`refreshing page ${page.pageId}`);
-					page.page.refreshPage();
-				}
+				pageToRefresh = trackedPages.get(pageId);
 			}
 		}
+
+		if (pageToRefresh) {
+			console.log(`refreshing page ${pageToRefresh.pageId}`);
+			pageToRefresh.page.refreshPage();
+		}
+
 	});
 
 	const existingTabs = await chrome.tabs.query({ url: "https://www.notion.so/*" });
@@ -118,7 +126,7 @@ async function start() {
 		return page;
 	}
 
-	function updateTab(tabId: number, url: string) {
+	function updateTab(tabId: number, url: string): [boolean, string | undefined] {
 
 		let trackedTab = trackedTabs.get(tabId);
 		const pageId = drumTrainer.getPageIdFromUrl(url);
@@ -128,11 +136,15 @@ async function start() {
 			if (!pageId) {
 				detachTabFromPage(trackedTab);
 				trackedTabs.delete(tabId);
+				return [true, undefined];
 			} else {
 				if (trackedTab.page.pageId !== pageId) {
 					detachTabFromPage(trackedTab);
 					trackedTab.page = attachTabToPage(tabId, pageId);
+					return [true, pageId];
 				}
+
+				return [false, pageId];
 			}
 
 		} else if (pageId) {
@@ -144,7 +156,10 @@ async function start() {
 			};
 
 			trackedTabs.set(tabId, trackedTab);
+			return [true, pageId];
 		}
+
+		return [false, undefined];
 	}
 
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useReducer, useState } from "react";
 import { Metronome, MetronomeState } from "./Metronome";
-import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
+import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
 import { Exercise, ExerciseTask } from "../models/Exercise";
 import { ExercisePage } from "../models/ExercisePage";
 import { ArrowSyncFilled, DocumentSyncRegular, NextFilled, TableSimpleIncludeRegular } from "@fluentui/react-icons";
@@ -71,54 +71,62 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 
 	const styles = useStyles();
 
+	const buttons = (
+		<div className={styles.buttonPanel}>
+			{state.newTask && (
+				<Tooltip content="To new task" relationship="description">
+					<Button icon={<NextFilled />} onClick={onNewTaskClick} appearance="primary" />
+				</Tooltip>
+			)}
+
+			<div className={styles.buttonPanelSpace} />
+
+			{!!isLoading && <><Spinner size="tiny" /><div/></> }
+
+			<Tooltip content="Update current task" relationship="description">
+				<Button onClick={onUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
+			</Tooltip>
+
+			<Tooltip content="Update exercise" relationship="description">
+				<Button onClick={onUpdateExerciseClick} disabled={!!isLoading} icon={<DocumentSyncRegular />} appearance="subtle" />
+			</Tooltip>
+			{exercise.bpmTable && exercise.bpmTableSpec && (
+				<Dialog>
+					<DialogTrigger disableButtonEnhancement>
+						<Tooltip content="Refill BPM Table" relationship="description">
+							<Button disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} appearance="subtle" />
+						</Tooltip>
+					</DialogTrigger>
+					<DialogSurface>
+						<DialogBody>
+							<DialogTitle>Refill BPM Table</DialogTitle>
+							<DialogContent>
+								This action will refill BPM table according to BPMs specification in exercise properties.
+								It will delete rows that are not included in the specification.
+							</DialogContent>
+							<DialogActions>
+								<DialogTrigger disableButtonEnhancement>
+									<Button appearance="secondary">Close</Button>
+								</DialogTrigger>
+								<DialogTrigger disableButtonEnhancement>
+									<Button appearance="primary" onClick={onRefillDatabase}>I understand, refill</Button>
+								</DialogTrigger>
+							</DialogActions>
+						</DialogBody>
+					</DialogSurface>
+				</Dialog>
+
+			)}
+		</div>
+	);
+
 	return (
 		<div className={styles.root}>
-			<div className={styles.buttonPanel}>
-				{state.newTask && (
-					<Tooltip content="To new task" relationship="description">
-						<Button icon={<NextFilled />} onClick={onNewTaskClick} appearance="primary" />
-					</Tooltip>
-				)}
-
-				<div className={styles.buttonPanelSpace} />
-
-				{!!isLoading && <><Spinner size="tiny" /><div/></> }
-
-				<Tooltip content="Update current task" relationship="description">
-					<Button onClick={onUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
-				</Tooltip>
-
-				<Tooltip content="Update exercise" relationship="description">
-					<Button onClick={onUpdateExerciseClick} disabled={!!isLoading} icon={<DocumentSyncRegular />} appearance="subtle" />
-				</Tooltip>
-				{exercise.bpmTable && exercise.bpmTableSpec && (
-					<Dialog>
-						<DialogTrigger disableButtonEnhancement>
-							<Tooltip content="Refill BPM Table" relationship="description">
-								<Button disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} appearance="subtle" />
-							</Tooltip>
-						</DialogTrigger>
-						<DialogSurface>
-							<DialogBody>
-								<DialogTitle>Refill BPM Table</DialogTitle>
-								<DialogContent>
-									This action will refill BPM table according to BPMs specification in exercise properties.
-									It will delete rows that are not included in the specification.
-								</DialogContent>
-								<DialogActions>
-									<DialogTrigger disableButtonEnhancement>
-										<Button appearance="secondary">Close</Button>
-									</DialogTrigger>
-									<DialogTrigger disableButtonEnhancement>
-										<Button appearance="primary" onClick={onRefillDatabase}>I understand, refill</Button>
-									</DialogTrigger>
-								</DialogActions>
-							</DialogBody>
-						</DialogSurface>
-					</Dialog>
-
-				)}
-			</div>
+			{ currentTask ? buttons : (
+				<Card>
+					{buttons}
+				</Card>
+			)}
 			{currentTask && (
 				<Metronome
 					options={currentTask.metronomeOptions}
