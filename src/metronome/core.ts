@@ -1,5 +1,5 @@
 
-export type MetronomeDuration = never
-| { type: "measures", value: number }
-| { type: "seconds", value: number }
-;
+export interface MetronomeDuration {
+	units: "measures" | "seconds",
+	chunks: number[],
+}

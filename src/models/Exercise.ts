@@ -129,39 +129,70 @@ export function parseExerciseSettings(
 
 		if (typeof t === "number") {
 
-			if (Number.isNaN(t) || t < 1) {
-				return fail();
+			if (Number.isNaN(t) || t <= 0) {
+				return fail(t);
 			}
 
-			return { type: "measures", value: t };
+			return { units: "measures", chunks: [t] };
 
 		} else if (typeof t !== 'string') {
-			return fail();
+			return fail(t);
 		}
 
-		let str = t.trim();
+		const chunks = t.split(',');
+		let units: MetronomeDuration["units"] | undefined;
+		const result = [];
 
-		let mul;
-		if (str.endsWith('s') || str.endsWith('S')) {
-			mul = 1;
-		} else if (str.endsWith('m') || str.endsWith('M')) {
-			mul = 60;
-		} else {
-			return fail();
+		for (const chunk of chunks) {
+
+			let str = chunk.trim();
+
+			let secondsMul;
+			if (str.endsWith('s') || str.endsWith('S')) {
+				secondsMul = 1;
+				str = str.substring(0, str.length - 1);
+			} else if (str.endsWith('m') || str.endsWith('M')) {
+				secondsMul = 60;
+				str = str.substring(0, str.length - 1);
+			}
+
+
+			let val = Number.parseFloat(str);
+			if (Number.isNaN(val) || val <= 0) {
+				return fail(chunk);
+			}
+
+			if (secondsMul !== undefined) {
+				val *= secondsMul;
+				if (units && units !== "seconds") {
+					return failMixedChunks();
+				}
+				units = "seconds";
+			} else {
+				if (units && units !== "measures") {
+					return failMixedChunks();
+				}
+				units = "measures";
+			}
+
+			result.push(val);
 		}
 
-		str = str.substring(0, str.length - 1);
-
-		let val = Number.parseFloat(str);
-		val *= mul;
-
-		if (Number.isNaN(val) || val < 0) {
-			return fail();
+		if (units === undefined) {
+			return fail(t);
 		}
 
-		return { type: "seconds", value: val, };
+		return {
+			units,
+			chunks: result,
+		};
 
-		function fail() {
+		function failMixedChunks() {
+			appendError?.(`invalid duration time: ${t}, mixing measures and time is not supported`);
+			return undefined;
+		}
+
+		function fail(t: any) {
 			appendError?.(`invalid duration time: ${t}, expected number of measures or {seconds}s or {minutes}m`);
 			return undefined;
 		}

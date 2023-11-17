@@ -210,6 +210,7 @@ const useElapsedViewClasses = makeStyles({
 interface PositionState {
 	elapsedMeasures: number,
 	elapsedSeconds: number,
+	elapsedParts: number,
 }
 
 const ElapsedView = React.memo(function({ core, clickEvent, duration }: {
@@ -219,23 +220,33 @@ const ElapsedView = React.memo(function({ core, clickEvent, duration }: {
 }) {
 
 	const classes = useElapsedViewClasses();
-	const [position, setPosition] = useState<PositionState>({ elapsedMeasures: 0, elapsedSeconds: 0 });
+	const [position, setPosition] = useState<PositionState>({ elapsedMeasures: 0, elapsedSeconds: 0, elapsedParts: 0 });
 
 	useLayoutEffect(() => {
 		const handler = () => {
-			setPosition({ elapsedMeasures: core.elapsedMeasures, elapsedSeconds: core.elapsedSeconds });
+			setPosition({ elapsedMeasures: core.elapsedMeasures, elapsedSeconds: core.elapsedSeconds, elapsedParts: core.elapsedChunks });
 		};
 		clickEvent.add(handler);
 		return () => clickEvent.remove(handler);
 	}, []);
 
+	const totalDuration = useMemo(() => {
+		if (!duration) return -1;
+		return duration.chunks.reduce((sum, v) => sum + v, 0);
+	}, [duration]);
+
 	return <div className={classes.root}>
+		{ duration && duration.chunks.length > 1 && (
+			<Text size={400}>
+				part: {Math.min(position.elapsedParts + 1, duration.chunks.length)}/{duration.chunks.length}
+			</Text>
+		)}
 
 		<Text size={400}>
-			bars: {position.elapsedMeasures}{ duration?.type === "measures" && ("/" + duration.value) }
+			bars: {position.elapsedMeasures}{ duration?.units === "measures" && ("/" + totalDuration) }
 		</Text>
 		<Text size={400}>
-			{formatTime(position.elapsedSeconds)}{ duration?.type === "seconds" && ("/" + formatTime(duration.value)) }
+			{formatTime(position.elapsedSeconds)}{ duration?.units === "seconds" && ("/" + formatTime(totalDuration)) }
 		</Text>
 	</div>
 });

@@ -1,4 +1,5 @@
-import { BeatAccentsMap } from ".";
+import _ from "lodash";
+import { BeatAccentsMap, MetronomeDuration } from ".";
 
 
 export interface AudioClock {
@@ -21,33 +22,51 @@ export interface MetronomeMeasureConfig {
 }
 
 
+interface CurrentSessionChunks {
+	measures: number[],
+}
 
 export class MetronomeStopwatch {
 
 	#suspendedElapsedMeasures: number = 0;
-	#suspendedElapsedTime: number = 0;
+	#suspendedElapsedSeconds: number = 0;
+	#suspendedElapsedChunks: number = 0;
 	readonly #finishEvent: TimerFinishEvent;
+
+	readonly totalMeasuresCount?: number;
+	readonly totalDurationSeconds?: number;
 
 	constructor(
 		private readonly clickHandler?: ClickEventHandler,
-		readonly totalMeasuresCount?: number,
-		readonly totalDuration?: number,
+		readonly duration?: MetronomeDuration,
 		onFinished?: () => void,
 	) {
 
 		this.#finishEvent = new TimerFinishEvent(onFinished);
 
-		if (this.totalMeasuresCount !== undefined) {
-			if (this.totalMeasuresCount < 1) {
-				throw new Error(`can not create MeasureDurationTimer with less than one measure. provided: ${this.totalMeasuresCount}`);
+		if (duration) {
+			const totalDuration = duration.chunks.reduce((sum, v) => sum + v, 0);
+
+			if (duration.units === 'measures') {
+				this.totalMeasuresCount = totalDuration;
+			} else if (duration.units === 'seconds') {
+				this.totalDurationSeconds = totalDuration;
+			} else {
+				throw new Error(`unsupported metronome duration units '${duration.units}'`);
 			}
 
-			this.totalMeasuresCount = Math.floor(this.totalMeasuresCount);
-		}
+			if (this.totalMeasuresCount !== undefined) {
+				if (this.totalMeasuresCount < 1) {
+					throw new Error(`can not create MeasureDurationTimer with less than one measure. provided: ${this.totalMeasuresCount}`);
+				}
 
-		if (this.totalDuration !== undefined) {
-			if (this.totalDuration < 0) {
-				throw new Error(`can not create SecondsDurationTimer with negative duration. provided: ${this.totalDuration}`);
+				this.totalMeasuresCount = Math.floor(this.totalMeasuresCount);
+			}
+
+			if (this.totalDurationSeconds !== undefined) {
+				if (this.totalDurationSeconds < 0) {
+					throw new Error(`can not create SecondsDurationTimer with negative duration. provided: ${this.totalDurationSeconds}`);
+				}
 			}
 		}
 
@@ -56,14 +75,12 @@ export class MetronomeStopwatch {
 	cloneReset() {
 		return new MetronomeStopwatch(
 			this.clickHandler,
-			this.totalMeasuresCount,
-			this.totalDuration,
+			this.duration,
 			this.#finishEvent.onFinished
 		);
 	}
 
 	#runState?: RunState;
-	#durationTimer?: DurationTimer;
 
 	get finished() {
 		return this.#finishEvent.finished;
@@ -73,63 +90,101 @@ export class MetronomeStopwatch {
 		return this.#suspendedElapsedMeasures + (this.#runState?.elapsedMeasures ?? 0);
 	}
 
-	get remainedMeasures() {
-		if (this.totalMeasuresCount !== undefined) {
-			return this.totalMeasuresCount - this.elapsedMeasures;
-		} else {
-			return undefined;
-		}
+	get elapsedSeconds() {
+		return this.#suspendedElapsedSeconds + (this.#runState?.elapsedTime ?? 0);
 	}
 
-	get elapsedTime() {
-		const result = this.#suspendedElapsedTime + (this.#runState?.elapsedTime ?? 0);
-		if (this.totalDuration !== undefined) {
-			return Math.min(this.totalDuration, result);
-		} else {
-			return result;
-		}
+	get elapsedChunks() {
+		return this.#suspendedElapsedChunks + (this.#runState?.elapsedChunks ?? 0);
 	}
+
 
 	resume(
 		clock: AudioClock,
 		resumeAudioTime: number,
 		measureConfig: MetronomeMeasureConfig,
-	) {
+	): CurrentSessionChunks | undefined {
 		if (this.#runState) throw new Error("can not resume active stopwatch");
 
-		if (this.totalDuration !== undefined) {
-			this.#durationTimer = new DurationTimer(
-				clock,
-				resumeAudioTime,
-				this.#finishEvent,
-				this.totalDuration - this.#suspendedElapsedTime
-			);
+
+		let currentSessionChunks: CurrentSessionChunks | undefined;
+
+		if (this.duration) {
+			let currentSessionMeasureChunks;
+
+			// todo: maintain elapsedChunks. it should be recalculated after the pause according to the below algorithm
+			if (this.duration.units === "seconds") {
+				currentSessionMeasureChunks = findRemainingChunks(this.duration.chunks, this.#suspendedElapsedSeconds);
+				currentSessionMeasureChunks = convertSecondsToMeasuresChunks(currentSessionMeasureChunks, measureConfig.duration);
+			} else {
+				currentSessionMeasureChunks = findRemainingChunks(this.duration.chunks, this.#suspendedElapsedMeasures);
+			}
+
+			currentSessionChunks = { measures: currentSessionMeasureChunks };
 		}
 
 		this.#runState = new RunState(
 			clock,
 			resumeAudioTime,
 			measureConfig,
-			this.totalMeasuresCount === undefined ? undefined : this.totalMeasuresCount - this.#suspendedElapsedMeasures,
+			currentSessionChunks,
 			this.clickHandler,
 			this.#finishEvent
 		);
 
+		return _.cloneDeep(currentSessionChunks);
 	}
 
 	suspend(): void {
 		if (!this.#runState) throw new Error("can not suspend paused stopwatch");
 
-		this.#durationTimer?.stop();
-		this.#durationTimer = undefined;
-
 		this.#runState.dispose();
 		this.#suspendedElapsedMeasures += this.#runState.elapsedMeasures;
-		this.#suspendedElapsedTime += this.#runState.elapsedTime;
+		this.#suspendedElapsedSeconds += this.#runState.elapsedTime;
+
+		if (this.duration) {
+			let remainingChunks;
+			if (this.duration.units === "seconds") {
+				remainingChunks = findRemainingChunks(this.duration.chunks, this.#suspendedElapsedSeconds);
+			} else {
+				remainingChunks = findRemainingChunks(this.duration.chunks, this.#suspendedElapsedMeasures);
+			}
+			this.#suspendedElapsedChunks = this.duration.chunks.length - remainingChunks.length;
+		}
+
+
 		this.#runState = undefined;
 	}
 }
 
+function findRemainingChunks(chunks: number[], elapsed: number): number[] {
+
+	for (let index = 0; index < chunks.length; ++index) {
+		elapsed -= chunks[index];
+		if (elapsed < 0) {
+			return [ -elapsed, ...chunks.slice(index + 1)];
+		}
+	}
+
+	return [0];
+}
+
+function convertSecondsToMeasuresChunks(chunks: number[], measureDuration: number): number[] {
+	const result = [];
+	let carry = 0;
+	for (const chunk of chunks) {
+		const untilNextChunk = chunk + carry;
+		// we require at least one measure per chunk
+		const measures = Math.max(1, Math.ceil(untilNextChunk/measureDuration));
+		result.push(measures);
+		const actualChunk = measures * measureDuration;
+
+		// for current strategy carry is disabled: we always round seconds up to integer measures
+		// carry = untilNextChunk - actualChunk;
+	}
+
+	return result;
+}
 
 class RunState {
 
@@ -137,15 +192,21 @@ class RunState {
 		readonly clock: AudioClock,
 		readonly resumeAudioTime: number,
 		readonly measureConfig: MetronomeMeasureConfig,
-		readonly measuresCount: number | undefined,
+		readonly measuresChunks: CurrentSessionChunks | undefined,
 		readonly clickHandler: ClickEventHandler | undefined,
 		readonly finishEvent: TimerFinishEvent,
 	) {
 		this.noteIndex = 0;
 		this.beatIndex = 0;
 		this.beatExpectedTime = resumeAudioTime;
+		if (measuresChunks) {
+			this.measuresCount = measuresChunks.measures.reduce((sum, v) => sum + v, 0);
+		}
+
 		this.#reschedule(resumeAudioTime - clock.currentAudioTime);
 	}
+
+	readonly measuresCount: number | undefined;
 
 	#timeoutToken: number | undefined;
 	#intervalToken: number | undefined;
@@ -178,6 +239,20 @@ class RunState {
 
 	get elapsedTime() {
 		return Math.max(0, this.clock.currentAudioTime - this.resumeAudioTime);
+	}
+
+	get elapsedChunks() {
+		if (!this.measuresChunks) return 0;
+		const measures = this.measuresChunks.measures;
+		let prefix = 0;
+
+		for (let index = 0; index < measures.length; index++) {
+			const chunk = measures[index];
+			prefix += chunk;
+			if (this.#elapsedMeasures < prefix) return index;
+		}
+
+		return measures.length;
 	}
 
 	noteErrorSum = 0;
@@ -255,6 +330,8 @@ class RunState {
 		}
 
 		--this.#elapsedMeasures;
+		clearTimeout(this.#timeoutToken);
+		clearInterval(this.#intervalToken);
 		this.#timeoutToken = setTimeout(() => this.#advanceElapsedMeasures(noteExpectedTime), Math.max(2, remainedTime * 1000));
 
 		return false;
@@ -263,47 +340,47 @@ class RunState {
 
 
 
-class DurationTimer {
+// class DurationTimer {
 
-	#finishTimeoutToken?: number;
-	readonly #finishAudioTime: number;
+// 	#finishTimeoutToken?: number;
+// 	readonly #finishAudioTime: number;
 
-	constructor(
-		readonly clock: AudioClock,
-		resumeAudioTime: number,
-		readonly finishEvent: TimerFinishEvent,
-		remainedDuration: number,
-	) {
-		this.#finishAudioTime = resumeAudioTime + remainedDuration;
+// 	constructor(
+// 		readonly clock: AudioClock,
+// 		resumeAudioTime: number,
+// 		readonly finishEvent: TimerFinishEvent,
+// 		remainedDuration: number,
+// 	) {
+// 		this.#finishAudioTime = resumeAudioTime + remainedDuration;
 
-		if (!this.finishEvent.finished) {
-			const estimatedCompletionDuration = (this.#finishAudioTime - clock.currentAudioTime) * 1000 + 2;
-			this.#finishTimeoutToken = setTimeout(this.#onTimeoutCompleted, estimatedCompletionDuration);
-		}
-	}
+// 		if (!this.finishEvent.finished) {
+// 			const estimatedCompletionDuration = (this.#finishAudioTime - clock.currentAudioTime) * 1000 + 2;
+// 			this.#finishTimeoutToken = setTimeout(this.#onTimeoutCompleted, estimatedCompletionDuration);
+// 		}
+// 	}
 
-	get actualRemainedDuration() {
-		return this.#finishAudioTime - this.clock.currentAudioTime;
-	}
-
-
-	stop() {
-		clearTimeout(this.#finishTimeoutToken);
-	}
-
-	#onTimeoutCompleted = () => {
-
-		if (this.finishEvent.finished) return;
-
-		if (this.clock.currentAudioTime < this.#finishAudioTime) {
-			this.#finishTimeoutToken = setTimeout(this.#onTimeoutCompleted, 2);
-			return;
-		}
+// 	get actualRemainedDuration() {
+// 		return this.#finishAudioTime - this.clock.currentAudioTime;
+// 	}
 
 
-		this.finishEvent.finish();
-	}
-}
+// 	stop() {
+// 		clearTimeout(this.#finishTimeoutToken);
+// 	}
+
+// 	#onTimeoutCompleted = () => {
+
+// 		if (this.finishEvent.finished) return;
+
+// 		if (this.clock.currentAudioTime < this.#finishAudioTime) {
+// 			this.#finishTimeoutToken = setTimeout(this.#onTimeoutCompleted, 2);
+// 			return;
+// 		}
+
+
+// 		this.finishEvent.finish();
+// 	}
+// }
 
 
 

@@ -1,6 +1,8 @@
 import _ from "lodash";
 import { MetronomeDuration } from "./core";
-import { AudioClock, MetronomeMeasureConfig, MetronomeStopwatch, ClickEventHandler } from "./stopwatch";
+import { MetronomeMeasureConfig, MetronomeStopwatch, ClickEventHandler } from "./stopwatch";
+import { Player } from "./Player";
+import { SimplePlayer } from "./Player";
 
 export { ClickEventHandler }
 export * from "./core";
@@ -86,22 +88,9 @@ export class Metronome {
 		this.stop();
 
 		this.#onFinished = onFinished;
-		let totalMeasures;
-		let totalDuration;
-		if (duration !== undefined) {
-			if (duration.type === 'measures') {
-				totalMeasures = duration.value;
-			} else if (duration.type === 'seconds') {
-				totalDuration = duration.value;
-			} else {
-				throw new Error(`unsupported metronome duration type '${(duration as any).type}'`);
-			}
-		}
-
 		this.#stopwatch = new MetronomeStopwatch(
 			clickEventHandler,
-			totalMeasures,
-			totalDuration,
+			duration,
 			this.#onTimerFinished,
 		);
 
@@ -149,11 +138,15 @@ export class Metronome {
 	}
 
 	get elapsedSeconds() {
-		return this.#stopwatch?.elapsedTime ?? 0;
+		return this.#stopwatch?.elapsedSeconds ?? 0;
 	}
 
 	get elapsedMeasures() {
 		return this.#stopwatch?.elapsedMeasures ?? 0;
+	}
+
+	get elapsedChunks() {
+		return this.#stopwatch?.elapsedChunks ?? 0;
 	}
 }
 
@@ -189,7 +182,8 @@ class NoteScheduler {
 
 	readonly #intervalToken: number;
 	#nextMeasureToScheduleAudioTime: number;
-	#remainedMeasures?: number;
+	#chunkRemainedMeasures?: number;
+	#chunksQueue: number[];
 
 	constructor(
 		readonly measureConfig: MetronomeMeasureConfig,
@@ -198,8 +192,11 @@ class NoteScheduler {
 	) {
 		this.#nextMeasureToScheduleAudioTime = this.player.currentAudioTime + 0.1;
 
-		this.#remainedMeasures = stopwatch.remainedMeasures;
-		stopwatch.resume(player, this.#nextMeasureToScheduleAudioTime, this.measureConfig);
+		const chunks = stopwatch.resume(player, this.#nextMeasureToScheduleAudioTime, this.measureConfig);
+		this.#chunksQueue = chunks?.measures ?? [];
+		if (chunks) {
+			this.#chunkRemainedMeasures = this.#chunksQueue.shift() ?? 0;
+		}
 		this.#intervalToken = setInterval(this.#onIntervalCallback, NoteScheduler.#workerIntervalS * 1000);
 		this.#onIntervalCallback();
 	}
@@ -219,125 +216,68 @@ class NoteScheduler {
 		const scheduleUntil = currentTime + NoteScheduler.#prescheduledIntervalS;
 
 		while (this.#nextMeasureToScheduleAudioTime < scheduleUntil) {
-			if (this.#remainedMeasures !== undefined) {
-				if (this.#remainedMeasures === 0) {
-					clearInterval(this.#intervalToken);
-					return;
+			const chunkRemainedMeasuresBeforeCurrent = this.#chunkRemainedMeasures;
+			if (this.#chunkRemainedMeasures !== undefined) {
+				if (this.#chunkRemainedMeasures === 0) {
+					if (this.#chunksQueue.length !== 0) {
+						this.#chunkRemainedMeasures = this.#chunksQueue.shift()!;
+					} else {
+						this.#scheduleTransition(this.#nextMeasureToScheduleAudioTime, 0);
+						clearInterval(this.#intervalToken);
+						return;
+					}
 				}
 
-				--this.#remainedMeasures;
+				--this.#chunkRemainedMeasures;
 			}
 
 			this.#nextMeasureToScheduleAudioTime = this.#scheduleMeasure(
-				this.#nextMeasureToScheduleAudioTime
+				this.#nextMeasureToScheduleAudioTime,
+				chunkRemainedMeasuresBeforeCurrent
 			);
 
 		}
 	}
 
-	#scheduleMeasure(startTime: number): number {
+	#scheduleMeasure(startTime: number, chunkRemainedMeasuresBeforeCurrent: number | undefined): number {
 
 		const { beatsCount, beatDuration, beatAccents, beatNotesShifts } = this.measureConfig;
 
 		let time = startTime;
 
+		let skipFirstBeatNote = this.#scheduleTransition(time, chunkRemainedMeasuresBeforeCurrent);
+		skipFirstBeatNote &&= beatNotesShifts[0] === 0;
 		for (let index = 0; index < beatsCount; index++, time += beatDuration) {
 
 			const accent = beatAccents[index] ?? 1;
 			if (accent !== 0) {
-				this.player.scheduleNote(time + beatNotesShifts[0], accent);
+				if (!skipFirstBeatNote) {
+					this.player.scheduleClick(time + beatNotesShifts[0], accent);
+				}
 				for (let noteIndex = 1; noteIndex < beatNotesShifts.length; ++noteIndex) {
-					this.player.scheduleNote(time + beatNotesShifts[noteIndex], 1);
+					this.player.scheduleClick(time + beatNotesShifts[noteIndex], 1);
 				}
 			}
+
+			skipFirstBeatNote = false;
 		}
 
 		return time;
 	}
-}
 
+	#scheduleTransition(time: number, chunkRemainedMeasuresBeforeCurrent: number | undefined): boolean {
 
-interface Player extends AudioClock {
-	readonly currentAudioTime: number;
-	scheduleNote(audioTime: number, accentValue: 1 | 2 | 3): void;
-	close(): void;
-}
-
-
-class SimplePlayer implements Player {
-
-	readonly #audioContext: AudioContext;
-	readonly #oscillator: OscillatorNode;
-	readonly #gain: GainNode;
-	readonly #ac2: AudioContext;
-
-	constructor(
-	) {
-		this.#audioContext = new AudioContext();
-
-		this.#oscillator = this.#audioContext.createOscillator();
-		this.#oscillator.type = "sine";
-		this.#oscillator.frequency.value = 1000;
-
-		this.#gain = this.#audioContext.createGain();
-		this.#gain.gain.value = 0;
-
-		// There's a "node graph"  oscillator->gain->destination
-		this.#oscillator.connect(this.#gain);
-		this.#gain.connect(this.#audioContext.destination);
-
-		this.#oscillator.start();
-
-
-
-		// on mobile browsers for some reason metronome is silent
-		// probably because audio can not start in time probably because of short notes.
-		// to prevent this, playing something almost silent in background
-		this.#ac2 = new AudioContext();
-		const tmposc = this.#ac2.createOscillator();
-		tmposc.frequency.value = 1;
-		const tmpgane = this.#ac2.createGain();
-		tmpgane.gain.value = 0.01;
-		tmposc.connect(tmpgane);
-		tmpgane.connect(this.#ac2.destination);
-		tmposc.start();
-
-	}
-
-	get currentAudioTime() { return this.#audioContext.currentTime; }
-
-	close() {
-		this.#oscillator.stop();
-		this.#audioContext.close();
-		this.#ac2.close();
-	}
-
-	static #getAccentParams(accentValue: 1 | 2 | 3) {
-		const baseFreq = 1000;
-		switch (accentValue) {
-			case 1: return [baseFreq, 0.85];
-			// 4 semitones
-			case 2: return [baseFreq + (baseFreq/12*4), 1];
-			// 7 semitones
-			default: return [baseFreq + (baseFreq/12*7), 1];
+		if (chunkRemainedMeasuresBeforeCurrent === 1) {
+			this.player.scheduleTransition(time, 2);
+			return true;
+		} else if (chunkRemainedMeasuresBeforeCurrent === 0) {
+			this.player.scheduleTransition(time, 1);
+			return true;
+		} else {
+			return false;
 		}
 	}
-
-	scheduleNote(audioTime: number, accentValue: 1 | 2 | 3) {
-
-		const freqParam = this.#oscillator.frequency;
-		const gainParam = this.#gain.gain;
-
-		const [frequency, volume] = SimplePlayer.#getAccentParams(accentValue);
-		const maxGain = 3;
-		const minGain = 0;
-		const gain = maxGain * volume;
-
-		freqParam.setValueAtTime(frequency, audioTime);
-		gainParam.setValueAtTime(minGain, audioTime)
-		gainParam.linearRampToValueAtTime(gain, audioTime + .001);
-		gainParam.linearRampToValueAtTime(minGain, audioTime + .001 + .01);
-	}
-
 }
+
+
 
