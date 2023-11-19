@@ -1,72 +1,93 @@
-import React from "react";
+import React, { useLayoutEffect, useState } from "react";
 import { startClient } from "./chromeTransport/client";
 import { Root, createRoot } from "react-dom/client";
 import { renderApp } from "./components/App";
 import { ExercisePage } from "./models/ExercisePage";
 import { ExercisePageView } from "./components/ExercisePageView";
+import { ObservableValue, ObservableValueControl } from "./Event";
 
 async function start() {
 
 	let reactRoot: Root | undefined;
 	let container: HTMLElement | undefined;
 
-	let page: ExercisePage | undefined;
+	let pageSubscription: () => void | undefined;
+	const observablePage = new ObservableValueControl<ExercisePage | undefined>(undefined);
 
+	observablePage.add(() => {
+		pageSubscription?.();
 
-	function updatePage() {
-		if (!page) return;
+		const page = observablePage.value;
 
-		if (!page.exercise) {
+		if (page) {
+			page.onChanged.add(updatePopup);
+			pageSubscription = () => page.onChanged.remove(updatePopup);
+		}
 
-			if (reactRoot) {
-				console.log("drum trainer: unmounting popup");
-				reactRoot.unmount();
-				reactRoot = undefined;
-			}
+		updatePopup();
 
-			if (container) {
-				//container.setAttribute("style", `position: absolute; top: 0; left: 0`);
-			}
+		function updatePopup() {
 
-		} else {
+			if (!page || !page.exercise) {
 
-			if (!container) {
-				container = document.createElement('div');
-				container.id = "drum-trainer-container";
-				container.style.zIndex = "1000";
-				container.style.position = "absolute";
-				container.style.bottom = "10px";
-				container.style.right = "10px";
-				document.body.appendChild(container);
-			}
+				if (reactRoot) {
+					console.log("metronome trainer: unmounting popup");
+					reactRoot.unmount();
+					reactRoot = undefined;
+				}
 
-			if (!reactRoot) {
-				console.log("drum trainer: rendering popup");
-				reactRoot = createRoot(container);
-				renderApp(reactRoot, <Popup page={page} />, { transparent: true, });
+				if (container) {
+					//container.setAttribute("style", `position: absolute; top: 0; left: 0`);
+				}
+
+			} else {
+
+				if (!container) {
+					container = document.createElement('div');
+					container.id = "metronome-trainer-container";
+					container.style.zIndex = "1000";
+					container.style.position = "absolute";
+					container.style.bottom = "10px";
+					container.style.right = "10px";
+					document.body.appendChild(container);
+				}
+
+				if (!reactRoot) {
+					console.log("metronome trainer: rendering popup");
+					reactRoot = createRoot(container);
+					renderApp(reactRoot, <Popup observablePage={observablePage} />, { transparent: true, });
+				}
 			}
 		}
-	}
+	});
 
 
 	await startClient({
-		onExercisePageInitialized: (p) => {
-			page = p;
-			page.onChanged.add(() => updatePage());
-			updatePage();
+		onNewExercisePage: (p) => {
+			observablePage.setValue(p);
 		},
 		keepAlive: true,
 	});
 
-	console.log("drum trainer initialized");
+	console.log("metronome trainer initialized");
 
 }
 
 start();
 
-function Popup({ page }: { page: ExercisePage }) {
+function Popup({ observablePage }: { observablePage: ObservableValue<ExercisePage | undefined> }) {
+
+	const [page, setPage] = useState<ExercisePage>();
+	useLayoutEffect(() => {
+		setPage(observablePage.value);
+		const handler = () => {
+			setPage(observablePage.value);
+		};
+		observablePage.add(handler);
+		return () => observablePage.remove(handler);
+	}, [observablePage]);
 
 	return <div>
-		<ExercisePageView page={page} />
+		{ page && (<ExercisePageView page={page} />) }
 	</div>;
 }

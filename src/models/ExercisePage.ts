@@ -6,7 +6,8 @@ export interface ExercisePage {
 
 	readonly pageId: string;
 
-	// todo: make exercise optional, extract some methods to the page (full update, event)
+	readonly hasAccess?: boolean;
+
 	readonly exercise?: Exercise;
 
 	readonly onChanged: BasicEvent;
@@ -23,5 +24,6 @@ export interface ExercisePage {
 export interface ExercisePageDto {
 	type: "exercisePage";
 	pageId: string;
+	hasAccess?: boolean;
 	exercise?: ExerciseDto;
 }

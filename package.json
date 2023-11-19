@@ -1,8 +1,8 @@
 {
-  "name": "drum-trainer",
+  "name": "metronome-trainer",
   "version": "0.1.0",
   "private": true,
-  "description": "drum-trainer",
+  "description": "metronome-trainer",
   "main": "index.js",
   "scripts": {
     "watch": "webpack --config webpack/webpack.dev.js --watch",

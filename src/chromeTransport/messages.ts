@@ -8,11 +8,16 @@ export type ServerRequest = never
 | AnyInvokeAsyncMethodRequest
 ;
 
-export type ClientEvent = never
+export type TabEvent = never
 | TabExercisePageChangedEvent
 | { type: "dummy" }
 ;
 
+export interface NonTabServerRequest {
+	type: "nonTabRequest",
+	sourceTabId: number,
+	request: ServerRequest
+}
 
 export interface KeepAliveRequest {
 	type: "keepAlive",
@@ -25,6 +30,12 @@ export interface ExercisePageRequest {
 export interface TabExercisePageChangedEvent {
 	type: "exercisePageChanged",
 	page: ExercisePageDto,
+}
+
+export interface TabsRuntimeEvent {
+	type: "tabsRuntimeEvent",
+	targetTabs: number[],
+	event: TabEvent,
 }
 
 export interface ExceptionResponse {

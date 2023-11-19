@@ -3,59 +3,91 @@ import { EventControl } from "../Event";
 import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto } from "../models/BpmTable";
 import { Exercise, ExerciseDto, ExerciseTask } from "../models/Exercise";
 import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
-import { ClientEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest, ExceptionResponse } from "./messages";
+import { TabEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest, ExceptionResponse, NonTabServerRequest, ServerRequest, TabsRuntimeEvent } from "./messages";
+
+export class TabClient {
+
+	constructor(private readonly sourceTabId?: number) {
+
+	}
+
+	async sendRequest<TRequest extends ServerRequest, TResponse extends object | undefined = undefined>(request: TRequest): Promise<TResponse> {
+		let message: ServerRequest | NonTabServerRequest = request;
+		if (this.sourceTabId) {
+			message = {
+				type: "nonTabRequest",
+				request,
+				sourceTabId: this.sourceTabId
+			} satisfies NonTabServerRequest;
+		}
 
 
-export async function startClient(client: {
-	onExercisePageInitialized: (page: ExercisePage) => void,
+		const response = await chrome.runtime.sendMessage<any, TResponse | ExceptionResponse>(message);
+		if (response && ("type" in response) && response.type === "error") {
+			throw new Error("remote exception: " + response.message);
+		} else {
+			return response as TResponse;
+		}
+	}
+}
+
+export async function startClient(options: {
+	onNewExercisePage: (page: ExercisePage) => void,
 	keepAlive: boolean,
+	sourceTabId?: number,
 }) {
+
+	const client = new TabClient(options.sourceTabId);
 
 	let page: ProxyExercisePage | undefined;
 
-	chrome.runtime.onMessage.addListener(function (message: ClientEvent, sender) {
-		switch(message.type) {
+	chrome.runtime.onMessage.addListener(function (message: TabEvent | TabsRuntimeEvent, sender) {
+		let event;
+		if (message.type === "tabsRuntimeEvent") {
+			if (options.sourceTabId && message.targetTabs.includes(options.sourceTabId)) {
+				event = message.event;
+			} else {
+				return;
+			}
+		} else {
+			event = message;
+		}
+
+		switch(event.type) {
 			case "exercisePageChanged": {
-				if (page) {
-					page.update(message.page);
+				if (page && page.pageId === event.page.pageId) {
+					page.update(event.page);
 				} else {
-					page = new ProxyExercisePage(message.page);
-					client.onExercisePageInitialized(page);
+					page = new ProxyExercisePage(client, event.page);
+					options.onNewExercisePage(page);
 				}
 			}
 			case "dummy": return;
 			default: {
-				const exhaustiveCheck: never = message;
-				throw new Error("unknown message " + (message as any)?.type);
+				const exhaustiveCheck: never = event;
+				throw new Error("unknown message " + (event as any)?.type);
 			}
 		}
 	});
 
-	const initPage = await sendRequest<ExercisePageRequest, ExercisePageDto>({ type: "getExercisePage" });
+
+	const initPage = await client.sendRequest<ExercisePageRequest, ExercisePageDto>({ type: "getExercisePage" });
 	if (!page && initPage) {
-		page = new ProxyExercisePage(initPage);
-		client.onExercisePageInitialized(page);
+		page = new ProxyExercisePage(client, initPage);
+		options.onNewExercisePage(page);
 	}
 
-	if (client.keepAlive) {
+	if (options.keepAlive) {
 		setInterval(() => {
 			chrome.runtime.sendMessage<KeepAliveRequest, boolean>({ type: "keepAlive" });
 		}, 15000);
 	}
 }
 
-async function sendRequest<TRequest, TResponse extends object | undefined = undefined>(request: TRequest): Promise<TResponse> {
-	const response = await chrome.runtime.sendMessage<TRequest, TResponse | ExceptionResponse>(request);
-	if (response && ("type" in response) && response.type === "error") {
-		throw new Error("remote exception: " + response.message);
-	} else {
-		return response as TResponse;
-	}
-}
 
 class ProxyExercisePage implements ExercisePage {
 
-	constructor(public dto: ExercisePageDto) {
+	constructor(readonly client: TabClient, public dto: ExercisePageDto) {
 		this.update(dto);
 	}
 
@@ -63,18 +95,20 @@ class ProxyExercisePage implements ExercisePage {
 
 	update(dto: ExercisePageDto) {
 		this.dto = dto;
-		this.exercise = syncProxy(ProxyExercise, this.exercise, dto.exercise);
+		this.exercise = syncProxy(this.client, ProxyExercise, this.exercise, dto.exercise);
 		this.onChanged.invoke();
 	}
 
 	get pageId() { return this.dto.pageId; }
+
+	get hasAccess() { return this.dto.hasAccess; }
 
 	exercise?: ProxyExercise;
 
 	readonly onChanged = new EventControl();
 
 	refreshPage(): Promise<void> {
-		return sendRequest<InvokeAsyncMethodRequest<ExercisePage, "refreshPage">>({
+		return this.client.sendRequest<InvokeAsyncMethodRequest<ExercisePage, "refreshPage">>({
 			type: "invokeAsyncMethod",
 			target: "page",
 			method: "refreshPage",
@@ -83,7 +117,7 @@ class ProxyExercisePage implements ExercisePage {
 	}
 
 	createExercise(): Promise<void> {
-		return sendRequest<InvokeAsyncMethodRequest<ExercisePage, "createExercise">>({
+		return this.client.sendRequest<InvokeAsyncMethodRequest<ExercisePage, "createExercise">>({
 			type: "invokeAsyncMethod",
 			target: "page",
 			method: "createExercise",
@@ -95,7 +129,7 @@ class ProxyExercisePage implements ExercisePage {
 class ProxyExercise implements Exercise {
 
 
-	constructor(public dto: ExerciseDto) {
+	constructor(readonly client: TabClient, public dto: ExerciseDto) {
 		this.update(dto);
 	}
 
@@ -107,7 +141,7 @@ class ProxyExercise implements Exercise {
 		if (_.isEqual(oldDto.currentTask, dto.currentTask)) dto.currentTask = oldDto.currentTask;
 		if (_.isEqual(oldDto.bpmTableSpec, dto.bpmTableSpec)) dto.bpmTableSpec = oldDto.bpmTableSpec;
 		if (_.isEqual(oldDto.errors, dto.errors)) dto.errors = oldDto.errors;
-		this.bpmTable = syncProxy(ProxyBpmTable, this.bpmTable, dto.bpmTable);
+		this.bpmTable = syncProxy(this.client, ProxyBpmTable, this.bpmTable, dto.bpmTable);
 	}
 
 	get currentTask() { return this.dto.currentTask; }
@@ -117,7 +151,7 @@ class ProxyExercise implements Exercise {
 	bpmTable?: ProxyBpmTable;
 
 	refreshTask(): Promise<void> {
-		return sendRequest<InvokeAsyncMethodRequest<Exercise, "refreshTask">>({
+		return this.client.sendRequest<InvokeAsyncMethodRequest<Exercise, "refreshTask">>({
 			type: "invokeAsyncMethod",
 			target: "exercise",
 			method: "refreshTask",
@@ -126,7 +160,7 @@ class ProxyExercise implements Exercise {
 	}
 
 	finishTask(task: ExerciseTask): Promise<void> {
-		return sendRequest<InvokeAsyncMethodRequest<Exercise, "finishTask">>({
+		return this.client.sendRequest<InvokeAsyncMethodRequest<Exercise, "finishTask">>({
 			type: "invokeAsyncMethod",
 			target: "exercise",
 			method: "finishTask",
@@ -137,7 +171,7 @@ class ProxyExercise implements Exercise {
 
 class ProxyBpmTable implements ExerciseBpmTable {
 
-	constructor(public dto: ExerciseBpmTableDto) {
+	constructor(readonly client: TabClient, public dto: ExerciseBpmTableDto) {
 		this.update(dto);
 	}
 
@@ -148,7 +182,7 @@ class ProxyBpmTable implements ExerciseBpmTable {
 	}
 
 	refill(spec: BpmTableSpec): Promise<void> {
-		return sendRequest<InvokeAsyncMethodRequest<ExerciseBpmTable, "refill">>({
+		return this.client.sendRequest<InvokeAsyncMethodRequest<ExerciseBpmTable, "refill">>({
 			type: "invokeAsyncMethod",
 			target: "bpmTable",
 			method: "refill",
@@ -159,13 +193,14 @@ class ProxyBpmTable implements ExerciseBpmTable {
 
 
 function syncProxy<TProxy extends { update(dto: TDto): void }, TDto>(
-	proxyCtor: { new(dto: TDto) : TProxy },
+	client: TabClient,
+	proxyCtor: { new(client: TabClient, dto: TDto) : TProxy },
 	currentProxy?: TProxy,
 	dto?: TDto
 ) {
 	if (dto) {
 		if (!currentProxy) {
-			currentProxy = new proxyCtor(dto);
+			currentProxy = new proxyCtor(client, dto);
 		} else {
 			currentProxy.update(dto);
 		}

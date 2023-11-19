@@ -6,16 +6,17 @@ import {
 } from "./NotionApi";
 import jsYaml from "js-yaml";
 import { BpmTableSpec } from "../models/BpmTable";
-import { DrumTrainer } from "../models/DrumTrainer";
+import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
 import { Exercise, ExerciseDto, ExerciseSettings, ExerciseTask, parseExerciseSettings } from "../models/Exercise";
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
+import { APIErrorCode, APIResponseError } from "@notionhq/client";
 
 
 
-export class NotionDrumTrainer implements DrumTrainer {
+export class NotionMetronomeTrainer implements MetronomeTrainer {
 
 	constructor(readonly api: NotionApi) {
 	}
@@ -40,11 +41,14 @@ class NotionPage implements ExercisePage {
 		return {
 			type: "exercisePage",
 			pageId: this.pageId,
+			hasAccess: this.hasAccess,
 			exercise: this.exercise?.exportDto(),
 		};
 	}
 
 	readonly onChanged = new EventControl();
+
+	hasAccess?: boolean;
 
 	exercise?: NotionExercise;
 
@@ -53,7 +57,22 @@ class NotionPage implements ExercisePage {
 
 		console.log(`refreshing page ${this.pageId}`);
 
-		const blocks = await parsePage(this.api, this.pageId);
+		let blocks;
+		try {
+			blocks = await parsePage(this.api, this.pageId);
+		} catch (ex) {
+			if (ex instanceof APIResponseError && ex.code === APIErrorCode.ObjectNotFound) {
+				this.hasAccess = false;
+				this.exercise = undefined;
+
+				console.log(`has no access to the page ${this.pageId}`, ex);
+				console.warn({ ex });
+				this.onChanged.invoke();
+				return;
+			}
+			throw ex;
+		}
+
 
 		const bpmTable = blocks.bpmDatabase ? new NotionBpmDatabase(this.api, blocks.bpmDatabase) : undefined;
 
@@ -67,6 +86,7 @@ class NotionPage implements ExercisePage {
 			exercise.doUpdate(blocks, blocks.settingsBlock, bpmTable);
 		}
 
+		this.hasAccess = true;
 		this.exercise = exercise;
 
 		console.log(`page ${this.pageId} refreshed, broadcasting event`);
@@ -90,14 +110,14 @@ All fields are optional, but you probably want to keep exercise duration 't'.
 After changing 'bpms' you can also refill the BPM table using the button above metronome.
 
 Recommended optional actions:
-In page properties enable "Full width".
-Drag "BPM table" database here and delete this block.
-Hide database title.
-Sort database view by "nBPM" property.
-Hide "nBPM" property from the view.
-Split rows into multiple pages by duplicating "Default view" and assigning each view advanced filter on the range of "nBPM" property (to enable '<' '>' filtration you might need to trigger "nBPM" formula update by adding trailing space).
+- In page properties enable "Full width".
+- Drag "BPM table" database here and delete this block.
+- Hide database title.
+- Sort database view by "nBPM" property.
+- Hide "nBPM" property from the view.
+- Split rows into multiple pages by duplicating "Default view" and assigning each view advanced filter on the range of "nBPM" property (to enable '<' '>' filtration you might need to trigger "nBPM" formula update by adding trailing space).
 
-Duplicate configured exercise page and in future create new exercises by simply duplicating that page.
+💡 Duplicate configured exercise page and in future create new exercises by simply duplicating that page.
 `.trim();
 
 		const result = await this.api.client.blocks.children.append({

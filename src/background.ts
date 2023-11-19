@@ -1,4 +1,4 @@
-import { createExtensionNotionDrumTrainer } from "./Notion/ExtensionNotionApi";
+import { createChromeNotionMetronomeTrainer } from "./Notion/ChromeNotionApi";
 import { sendExercisePageUpdate, startServer } from "./chromeTransport/background";
 import { ExercisePage } from "./models/ExercisePage";
 
@@ -58,7 +58,7 @@ async function start() {
 
 
 	console.log("creating api");
-	const drumTrainer = await createExtensionNotionDrumTrainer();
+	const backend = await createChromeNotionMetronomeTrainer();
 
 	console.log("api created");
 
@@ -73,7 +73,7 @@ async function start() {
 
 		} else if (changeInfo.status === "complete") {
 
-			const pageId = drumTrainer.getPageIdFromUrl(tab.url);
+			const pageId = backend.getPageIdFromUrl(tab.url);
 			if (pageId) {
 				pageToRefresh = trackedPages.get(pageId);
 			}
@@ -115,7 +115,7 @@ async function start() {
 	function attachTabToPage(tabId: number, pageId: string) {
 		let page = trackedPages.get(pageId);
 		if (!page) {
-			page = new BackgroundExercisePage(drumTrainer.createPage(pageId));
+			page = new BackgroundExercisePage(backend.createPage(pageId));
 			trackedPages.set(pageId, page);
 			console.log(`page ${pageId} created`);
 		}
@@ -129,7 +129,7 @@ async function start() {
 	function updateTab(tabId: number, url: string): [boolean, string | undefined] {
 
 		let trackedTab = trackedTabs.get(tabId);
-		const pageId = drumTrainer.getPageIdFromUrl(url);
+		const pageId = backend.getPageIdFromUrl(url);
 
 		if (trackedTab) {
 

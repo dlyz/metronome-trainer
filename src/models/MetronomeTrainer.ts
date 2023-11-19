@@ -1,7 +1,7 @@
 import { ExercisePage } from "./ExercisePage";
 
 
-export interface DrumTrainer {
+export interface MetronomeTrainer {
 
 	getPageIdFromUrl(url: string | undefined): string | undefined;
 

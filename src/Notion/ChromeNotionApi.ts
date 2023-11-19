@@ -1,9 +1,9 @@
-import { DrumTrainer } from "../models/DrumTrainer";
+import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { NotionApi } from "./NotionApi";
-import { NotionDrumTrainer } from "./NotionDrumTrainer";
+import { NotionMetronomeTrainer } from "./NotionMetronomeTrainer";
 
 
-export async function createExtensionNotionDrumTrainer(): Promise<DrumTrainer> {
+export async function createChromeNotionMetronomeTrainer(): Promise<MetronomeTrainer> {
 
 	let notionApi: NotionApi | undefined;
 
@@ -27,5 +27,5 @@ export async function createExtensionNotionDrumTrainer(): Promise<DrumTrainer> {
 	const options = await chrome.storage.sync.get("notionToken");
 	notionApi = new NotionApi({ token: tokenFromEvent?.token ?? options["notionToken"] });
 
-	return new NotionDrumTrainer(notionApi);
+	return new NotionMetronomeTrainer(notionApi);
 }
