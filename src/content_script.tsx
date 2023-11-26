@@ -5,6 +5,7 @@ import { renderApp } from "./components/App";
 import { ExercisePage } from "./models/ExercisePage";
 import { ExercisePageView } from "./components/ExercisePageView";
 import { ObservableValue, ObservableValueControl } from "./Event";
+import { notionContentScriptApiFactory } from "./Notion/NotionContentScriptApi";
 
 async function start() {
 
@@ -66,6 +67,7 @@ async function start() {
 		onNewExercisePage: (p) => {
 			observablePage.setValue(p);
 		},
+		contentScriptApiFactory: notionContentScriptApiFactory,
 		keepAlive: true,
 	});
 

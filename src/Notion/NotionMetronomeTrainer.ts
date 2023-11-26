@@ -2,23 +2,28 @@ import {
 	BlockObjectResponse,
 	DatabaseObjectResponse,
 	NotionApi,
+	PageObjectResponse,
 	getAllPages
 } from "./NotionApi";
 import jsYaml from "js-yaml";
 import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
-import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
-import { Exercise, ExerciseDto, ExerciseSettings, ExerciseTask, parseExerciseSettings } from "../models/Exercise";
+import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
+import { Exercise, ExerciseSettings, ExerciseTask, parseExerciseSettings } from "../models/Exercise";
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
 import { APIErrorCode, APIResponseError } from "@notionhq/client";
+import { NotionExerciseDto, NotionExercisePageDto } from "./NotionExercisePageDto";
 
 
 
 export class NotionMetronomeTrainer implements MetronomeTrainer {
 
-	constructor(readonly api: NotionApi) {
+	constructor(
+		readonly api: NotionApi,
+		readonly contentScriptApiFactory: ExercisePageContentScriptApiFactory | undefined,
+		) {
 	}
 
 	getPageIdFromUrl(url: string | undefined) {
@@ -26,23 +31,27 @@ export class NotionMetronomeTrainer implements MetronomeTrainer {
 	}
 
 	createPage(pageId: string): ExercisePage {
-		return new NotionPage(this.api, pageId);
+		return new NotionPage(this.api, this.contentScriptApiFactory, pageId);
 	}
 }
 
 class NotionPage implements ExercisePage {
 	constructor(
 		readonly api: NotionApi,
+		readonly contentScriptApiFactory: ExercisePageContentScriptApiFactory | undefined,
 		readonly pageId: string,
 	) {
+		this.contentScriptApi = contentScriptApiFactory?.(this.exportDto());
 	}
 
-	exportDto(): ExercisePageDto {
+	exportDto(): NotionExercisePageDto {
 		return {
 			type: "exercisePage",
 			pageId: this.pageId,
+			sourceType: "notion",
 			hasAccess: this.hasAccess,
 			exercise: this.exercise?.exportDto(),
+			nextExercisePageId: this.#nextExercisePageId,
 		};
 	}
 
@@ -52,25 +61,23 @@ class NotionPage implements ExercisePage {
 
 	exercise?: NotionExercise;
 
+	contentScriptApi: ExercisePageContentScriptApi | undefined;
+
+	#nextExercisePageId?: string[];
+
 	// todo: async locks
 	async refreshPage(): Promise<void> {
 
 		console.log(`refreshing page ${this.pageId}`);
 
-		let blocks;
-		try {
-			blocks = await parsePage(this.api, this.pageId);
-		} catch (ex) {
-			if (ex instanceof APIResponseError && ex.code === APIErrorCode.ObjectNotFound) {
-				this.hasAccess = false;
-				this.exercise = undefined;
+		const blocks = await parsePage(this.api, this.pageId);
+		if (!blocks) {
+			this.hasAccess = false;
+			this.exercise = undefined;
 
-				console.log(`has no access to the page ${this.pageId}`, ex);
-				console.warn({ ex });
-				this.onChanged.invoke();
-				return;
-			}
-			throw ex;
+			console.log(`has no access to the page ${this.pageId}`);
+			this.onChanged.invoke();
+			return;
 		}
 
 
@@ -91,77 +98,23 @@ class NotionPage implements ExercisePage {
 
 		console.log(`page ${this.pageId} refreshed, broadcasting event`);
 		this.onChanged.invoke();
+
+		this.#findNextExercisePage();
+	}
+
+	async #findNextExercisePage() {
+		this.#nextExercisePageId = await findNextExercisePage(this.api, this.pageId);
+		console.log(`page ${this.pageId}: next exercise page: ${this.#nextExercisePageId?.[0]}`);
+		this.onChanged.invoke();
 	}
 
 
 	async createExercise(): Promise<void> {
 
-		const defaultSettingContent = `
-bpms: 60-70/2, 70-80
-bar: 4/4
-div: 2
-accents: [3,1,2,1]
-t: 1m
-`.trim();
-
-		const instructions = `
-To the left is an exercise settings block, change them as you need.
-All fields are optional, but you probably want to keep exercise duration 't'.
-After changing 'bpms' you can also refill the BPM table using the button above metronome.
-
-Recommended optional actions:
-- In page properties enable "Full width".
-- Drag "BPM table" database here and delete this block.
-- Hide database title.
-- Sort database view by "nBPM" property.
-- Hide "nBPM" property from the view.
-- Split rows into multiple pages by duplicating "Default view" and assigning each view advanced filter on the range of "nBPM" property (to enable '<' '>' filtration you might need to trigger "nBPM" formula update by adding trailing space).
-
-💡 Duplicate configured exercise page and in future create new exercises by simply duplicating that page.
-`.trim();
-
-		const result = await this.api.client.blocks.children.append({
-			block_id: this.pageId,
-			children: [
-				{
-					column_list: {
-						children: [
-							{
-								column: {
-									children: [{
-										paragraph: {
-											rich_text: [{
-												type: "text",
-												text: {
-													content: instructions,
-												}
-											}]
-										}
-									}]
-								}
-							},
-							{
-								column: {
-									children: [{
-										code: {
-											language: "yaml",
-											rich_text: [{
-												type: "text",
-												text: {
-													content: defaultSettingContent
-												}
-											}]
-										}
-									}]
-								}
-							}
-						]
-					}
-				}
-			]
-		});
+		await createExerciseStructure(this.api, this.pageId);
 
 		await this.refreshPage();
+
 		if (!this.exercise) {
 			throw new Error("Settings block have been created, but after the refresh is has not been found.");
 		}
@@ -362,18 +315,15 @@ class NotionExercise implements Exercise {
 		await refillDatabase(this.api, result.id, result.properties, spec);
 	}
 
-	exportDto(): ExerciseDto {
+	exportDto(): NotionExerciseDto {
 		return {
 			type: "exercise",
-			source: {
-				type: "notion",
-				bpmDatabaseId: this.bpmTable?.id,
-				settingsBlockId: this.pageBlocks.settingsBlock?.id,
-			},
 			currentTask: this.currentTask,
 			errors: this.errors,
 			bpmTableSpec: this.bpmTableSpec,
 			bpmTable: this.bpmTable?.exportDto(),
+			bpmDatabaseId: this.bpmTable?.id,
+			settingsBlockId: this.pageBlocks.settingsBlock?.id,
 		}
 	}
 
@@ -386,6 +336,7 @@ interface PageBlockStructure {
 	bpmDatabaseBlock?: HBlock,
 	bpmDatabaseColumn?: BlockColumnParent,
 	bpmDatabase?: DatabaseObjectResponse,
+	innerPagesIds?: string[],
 }
 
 interface BlockColumnParent {
@@ -393,8 +344,19 @@ interface BlockColumnParent {
 	columnIndex: number,
 }
 
-async function parsePage(api: NotionApi, pageId: string): Promise<PageBlockStructure> {
-	const pageBlocksTree = await getBlockDescendants(api, pageId);
+
+async function parsePage(api: NotionApi, pageId: string, includeInnerPages?: boolean): Promise<PageBlockStructure | undefined> {
+
+	let pageBlocksTree;
+	try {
+		pageBlocksTree = await getBlockDescendants(api, pageId);
+	} catch (ex) {
+		if (isObjectNotFound(ex)) {
+			return undefined;
+		}
+		throw ex;
+	}
+
 	const pageBlocksFlat = flattenBlocks(pageBlocksTree);
 	const settingsBlock = pageBlocksFlat.find(b => b.type === "code" && b.code.language === "yaml");
 
@@ -413,6 +375,13 @@ async function parsePage(api: NotionApi, pageId: string): Promise<PageBlockStruc
 		settingsColumn = settingsColumnList = undefined;
 	}
 
+	let innerPagesIds;
+	if (includeInnerPages) {
+		innerPagesIds = pageBlocksFlat
+			.filter(b => b.type === "child_page")
+			.map(b => b.id);
+	}
+
 	return {
 		pageId,
 		settingsBlock,
@@ -420,6 +389,7 @@ async function parsePage(api: NotionApi, pageId: string): Promise<PageBlockStruc
 		bpmDatabase,
 		settingsColumn: getColumn(settingsBlock),
 		bpmDatabaseColumn: getColumn(bpmDatabaseBlock),
+		innerPagesIds,
 	}
 
 
@@ -482,4 +452,158 @@ async function getBlockDescendants(api: NotionApi, blockId: string): Promise<HBl
 	}
 
 	return response;
+}
+
+
+function createExerciseStructure(api: NotionApi, pageId: string) {
+	const defaultSettingContent = `
+bpms: 60-70/2, 70-80
+bar: 4/4
+div: 2
+accents: [3,1,2,1]
+t: 1m
+`.trim();
+
+	const instructions = `
+To the left is an exercise settings block, change them as you need.
+All fields are optional, but you probably want to keep exercise duration 't'.
+After changing 'bpms' you can also refill the BPM table using the button above metronome.
+
+Recommended optional actions:
+- In page properties enable "Full width".
+- Drag "BPM table" database here and delete this block.
+- Hide database title.
+- Sort database view by "nBPM" property.
+- Hide "nBPM" property from the view.
+- Split rows into multiple pages by duplicating "Default view" and assigning each view advanced filter on the range of "nBPM" property (to enable '<' '>' filtration you might need to trigger "nBPM" formula update by adding trailing space).
+
+💡 Duplicate configured exercise page and in future create new exercises by simply duplicating that page.
+`.trim();
+
+	return api.client.blocks.children.append({
+		block_id: pageId,
+		children: [
+			{
+				column_list: {
+					children: [
+						{
+							column: {
+								children: [{
+									paragraph: {
+										rich_text: [{
+											type: "text",
+											text: {
+												content: instructions,
+											}
+										}]
+									}
+								}]
+							}
+						},
+						{
+							column: {
+								children: [{
+									code: {
+										language: "yaml",
+										rich_text: [{
+											type: "text",
+											text: {
+												content: defaultSettingContent
+											}
+										}]
+									}
+								}]
+							}
+						}
+					]
+				}
+			}
+		]
+	});
+}
+
+function isObjectNotFound(ex: unknown): ex is APIResponseError {
+	return ex instanceof APIResponseError && ex.code === APIErrorCode.ObjectNotFound;
+}
+
+async function findNextExercisePage(api: NotionApi, pageId: string) {
+
+	while (true)
+	{
+		const parentResult = await getParentPage(pageId);
+		if (!parentResult) return undefined;
+		const { parentId, actualPageId } = parentResult;
+		// notions supports a few format for same id,
+		// but to search in the list we have to use canonical one from responses.
+		pageId = actualPageId;
+
+		const siblings = await getChildrenPages(parentId);
+		const pageIndex = siblings.indexOf(pageId);
+		if (pageIndex === -1) return undefined;
+		const siblingsToCheck = siblings.slice(pageIndex + 1);
+		for (const sibling of siblingsToCheck) {
+			const result = await findExerciseDeep(sibling);
+			if (result) return [...result, parentId];
+		}
+
+		pageId = parentId;
+	}
+
+	async function findExerciseDeep(pageId: string): Promise<string[] | undefined> {
+		const parsedPage = await parsePage(api, pageId, true);
+
+		if (!parsedPage) return undefined;
+
+		if (parsedPage.settingsBlock || parsedPage.bpmDatabase) {
+			return [pageId];
+		}
+
+		for (const child of parsedPage.innerPagesIds ?? []) {
+			const result = await findExerciseDeep(child);
+			if (result) return [...result, pageId];
+		}
+
+		return undefined;
+	}
+
+
+	async function getChildrenPages(pageId: string): Promise<string[]> {
+
+		let blocks;
+		try {
+			blocks = await getAllPages(api.getBlockChildren(pageId));
+		} catch(ex) {
+			if (isObjectNotFound(ex)) {
+				return [];
+			}
+			throw ex;
+		}
+
+		const results = [];
+		for (const block of blocks) {
+			if (block.type === "child_page") {
+				results.push(block.id);
+			}
+		}
+		return results;
+	}
+
+	async function getParentPage(pageId: string): Promise<{ parentId: string, actualPageId: string } | undefined> {
+
+		let page;
+		try {
+			page = await api.client.pages.retrieve({ page_id: pageId }) as PageObjectResponse;
+		} catch(ex) {
+			if (isObjectNotFound(ex)) {
+				return undefined;
+			}
+			throw ex;
+		}
+
+		if (page.parent.type === "page_id") {
+			return { parentId: page.parent.page_id, actualPageId: page.id };
+		} else {
+			return undefined;
+		}
+	}
 }

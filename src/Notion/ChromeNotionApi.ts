@@ -1,9 +1,12 @@
+import { ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { NotionApi } from "./NotionApi";
 import { NotionMetronomeTrainer } from "./NotionMetronomeTrainer";
 
 
-export async function createChromeNotionMetronomeTrainer(): Promise<MetronomeTrainer> {
+export async function createChromeNotionMetronomeTrainer(
+	contentScriptApiFactory?: ExercisePageContentScriptApiFactory
+): Promise<MetronomeTrainer> {
 
 	let notionApi: NotionApi | undefined;
 
@@ -27,5 +30,5 @@ export async function createChromeNotionMetronomeTrainer(): Promise<MetronomeTra
 	const options = await chrome.storage.sync.get("notionToken");
 	notionApi = new NotionApi({ token: tokenFromEvent?.token ?? options["notionToken"] });
 
-	return new NotionMetronomeTrainer(notionApi);
+	return new NotionMetronomeTrainer(notionApi, contentScriptApiFactory);
 }

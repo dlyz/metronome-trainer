@@ -23,15 +23,9 @@ export interface Exercise {
 
 
 
-export interface ExerciseSourceDto {
-	type: "notion",
-	bpmDatabaseId?: string,
-	settingsBlockId?: string,
-}
 
 export interface ExerciseDto {
 	type: "exercise";
-	source: ExerciseSourceDto,
 	currentTask?: ExerciseTask,
 	bpmTableSpec?: BpmTableSpec;
 	bpmTable?: ExerciseBpmTableDto;

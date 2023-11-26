@@ -2,7 +2,7 @@ import _ from "lodash";
 import { EventControl } from "../Event";
 import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto } from "../models/BpmTable";
 import { Exercise, ExerciseDto, ExerciseTask } from "../models/Exercise";
-import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
+import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory, ExercisePageDto } from "../models/ExercisePage";
 import { TabEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest, ExceptionResponse, NonTabServerRequest, ServerRequest, TabsRuntimeEvent } from "./messages";
 
 export class TabClient {
@@ -33,6 +33,7 @@ export class TabClient {
 
 export async function startClient(options: {
 	onNewExercisePage: (page: ExercisePage) => void,
+	contentScriptApiFactory?: ExercisePageContentScriptApiFactory,
 	keepAlive: boolean,
 	sourceTabId?: number,
 }) {
@@ -55,10 +56,10 @@ export async function startClient(options: {
 
 		switch(event.type) {
 			case "exercisePageChanged": {
-				if (page && page.pageId === event.page.pageId) {
+				if (page && page.pageId === event.page.pageId && page.dto.sourceType === event.page.sourceType) {
 					page.update(event.page);
 				} else {
-					page = new ProxyExercisePage(client, event.page);
+					page = new ProxyExercisePage(client, options.contentScriptApiFactory, event.page);
 					options.onNewExercisePage(page);
 				}
 			}
@@ -73,7 +74,7 @@ export async function startClient(options: {
 
 	const initPage = await client.sendRequest<ExercisePageRequest, ExercisePageDto>({ type: "getExercisePage" });
 	if (!page && initPage) {
-		page = new ProxyExercisePage(client, initPage);
+		page = new ProxyExercisePage(client, options.contentScriptApiFactory, initPage);
 		options.onNewExercisePage(page);
 	}
 
@@ -87,15 +88,24 @@ export async function startClient(options: {
 
 class ProxyExercisePage implements ExercisePage {
 
-	constructor(readonly client: TabClient, public dto: ExercisePageDto) {
+	constructor(
+		readonly client: TabClient,
+		contentScriptApiFactory: ExercisePageContentScriptApiFactory | undefined,
+		public dto: ExercisePageDto,
+	) {
+		this.contentScriptApi = contentScriptApiFactory?.(dto);
 		this.update(dto);
 	}
+
+	contentScriptApi: ExercisePageContentScriptApi | undefined;
 
 	exportDto(): ExercisePageDto { return this.dto;	}
 
 	update(dto: ExercisePageDto) {
+		//copyUnchanged(["source"], this.dto, dto);
 		this.dto = dto;
 		this.exercise = syncProxy(this.client, ProxyExercise, this.exercise, dto.exercise);
+		this.contentScriptApi?.update(dto);
 		this.onChanged.invoke();
 	}
 
@@ -136,11 +146,12 @@ class ProxyExercise implements Exercise {
 	exportDto(): ExerciseDto { return this.dto; }
 
 	update(dto: ExerciseDto) {
-		const oldDto = this.dto;
+		copyUnchanged(
+			["currentTask", "bpmTableSpec", "errors"],
+			this.dto,
+			dto,
+		);
 		this.dto = dto;
-		if (_.isEqual(oldDto.currentTask, dto.currentTask)) dto.currentTask = oldDto.currentTask;
-		if (_.isEqual(oldDto.bpmTableSpec, dto.bpmTableSpec)) dto.bpmTableSpec = oldDto.bpmTableSpec;
-		if (_.isEqual(oldDto.errors, dto.errors)) dto.errors = oldDto.errors;
 		this.bpmTable = syncProxy(this.client, ProxyBpmTable, this.bpmTable, dto.bpmTable);
 	}
 
@@ -191,6 +202,11 @@ class ProxyBpmTable implements ExerciseBpmTable {
 	}
 }
 
+function copyUnchanged<T, TKey extends keyof T>(keys: TKey[], from: T, to: T) {
+	for (const key of keys) {
+		if (_.isEqual(from[key], to[key])) to[key] = from[key];
+	}
+}
 
 function syncProxy<TProxy extends { update(dto: TDto): void }, TDto>(
 	client: TabClient,

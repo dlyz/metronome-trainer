@@ -3,7 +3,7 @@ import { Metronome, MetronomeState } from "./Metronome";
 import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
 import { Exercise, ExerciseTask } from "../models/Exercise";
 import { ExercisePage } from "../models/ExercisePage";
-import { ArrowSyncFilled, DocumentSyncRegular, NextFilled, TableSimpleIncludeRegular } from "@fluentui/react-icons";
+import { ArrowCircleUpFilled, ArrowSyncFilled, DocumentSyncRegular, NextFilled, TableSimpleIncludeRegular } from "@fluentui/react-icons";
 
 export interface ExerciseViewProps {
 	page: ExercisePage,
@@ -28,7 +28,7 @@ const useStyles = makeStyles({
 export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseViewProps) {
 
 	const [state, dispatch] = useReducer(stateReducer, { currentTaskState: MetronomeState.Stopped });
-	const { currentTask } = state;
+	const { currentTask, hasNextExercise } = state;
 	const [isLoading, setIsLoading] = useState(0);
 
 	const onRefillDatabase = useCallback(async () => {
@@ -60,12 +60,16 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 		dispatch({ type: "useNewTask" });
 	}, []);
 
+	const onNextExerciseClick = useCallback(() => {
+		page.contentScriptApi?.toNextExercise();
+	}, [page]);
+
 	useLayoutEffect(() => {
 		const handler = () => {
-			dispatch({ type: "setNewTask", task: exercise.currentTask });
+			dispatch({ type: "pageUpdated", task: exercise.currentTask, hasNextExercise: page.contentScriptApi?.hasNextExercise });
 		}
 		page.onChanged.add(handler);
-		dispatch({ type: "setNewTask", task: exercise.currentTask });
+		dispatch({ type: "pageUpdated", task: exercise.currentTask, hasNextExercise: page.contentScriptApi?.hasNextExercise });
 		return () => page.onChanged.remove(handler);
 	}, [page, exercise]);
 
@@ -73,15 +77,28 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 
 	const buttons = (
 		<div className={styles.buttonPanel}>
+
+			{state.currentTaskState === MetronomeState.Finished && hasNextExercise && (
+				<Tooltip content="To next exercise" relationship="description">
+					<Button onClick={onNextExerciseClick} icon={<NextFilled />} appearance="primary" />
+				</Tooltip>
+			)}
+
 			{state.newTask && (
 				<Tooltip content="To new task" relationship="description">
-					<Button icon={<NextFilled />} onClick={onNewTaskClick} appearance="primary" />
+					<Button onClick={onNewTaskClick} icon={<ArrowCircleUpFilled />} appearance="primary" />
 				</Tooltip>
 			)}
 
 			<div className={styles.buttonPanelSpace} />
 
 			{!!isLoading && <><Spinner size="tiny" /><div/></> }
+
+			{state.currentTaskState !== MetronomeState.Finished && hasNextExercise && (
+				<Tooltip content="To next exercise" relationship="description">
+					<Button onClick={onNextExerciseClick} disabled={!!isLoading} icon={<NextFilled />} appearance="subtle" />
+				</Tooltip>
+			)}
 
 			<Tooltip content="Update current task" relationship="description">
 				<Button onClick={onUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
@@ -157,6 +174,7 @@ interface State {
 	currentTask?: ExerciseTask,
 	newTask?: ExerciseTask,
 	currentTaskState: MetronomeState,
+	hasNextExercise?: boolean,
 }
 
 type Action = never
@@ -164,8 +182,9 @@ type Action = never
 		type: "useNewTask",
 	}
 	| {
-		type: "setNewTask",
+		type: "pageUpdated",
 		task?: ExerciseTask,
+		hasNextExercise: boolean | undefined,
 	}
 	| {
 		type: "setCurrentTaskState",
@@ -190,20 +209,25 @@ function stateReducer(state: State, action: Action): State {
 				currentTaskState: action.state,
 			};
 		}
-		case "setNewTask": {
+		case "pageUpdated": {
 			if (state.currentTask === action.task) {
 				// action used for exercise update, so we cannot reuse old state
 				return {
 					...state,
 					newTask: undefined,
+					hasNextExercise: action.hasNextExercise,
 				};
 			}
 			else if (state.currentTaskState === MetronomeState.Stopped) {
-				return setCurrentTask(action.task);
+				return  {
+					...setCurrentTask(action.task),
+					hasNextExercise: action.hasNextExercise,
+				};
 			} else {
 				return {
 					...state,
 					newTask: action.task,
+					hasNextExercise: action.hasNextExercise,
 				};
 			}
 		}
