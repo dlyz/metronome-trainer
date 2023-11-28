@@ -9,7 +9,7 @@ import jsYaml from "js-yaml";
 import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
-import { Exercise, ExerciseSettings, ExerciseTask, parseExerciseSettings } from "../models/Exercise";
+import { Exercise, ExerciseSettings, ExerciseTask, applyBaseBpm, parseExerciseSettings } from "../models/Exercise";
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
@@ -175,35 +175,28 @@ class NotionExercise implements Exercise {
 			try {
 				settings = jsYaml.load(settingText) as ExerciseSettings;
 			} catch (ex) {
-				errors.push("invalid yaml: ", settingText);
+				errors.push("invalid yaml: " + settingText);
 			}
 		}
 
-		const { metronomeOptions, duration, bpmTableSpec } = parseExerciseSettings(
+		const currentTaskBpm = bpmTable?.tryGetNextCachedEmptyItem();
+		const bpm = currentTaskBpm?.bpm;
+
+		const { metronomeTask, bpmTableSpec } = parseExerciseSettings(
 			settings ?? {},
 			error => errors.push(error)
 		);
 
-		if (errors.length > 0) {
-			console.warn(`exercise parsing errors`, errors);
+		let task: ExerciseTask | undefined;
+		if (bpm !== undefined) {
+			task = {
+				baseBpm: bpm,
+				metronomeTask: applyBaseBpm(bpm, metronomeTask),
+			};
 		}
 
-
-		let task: ExerciseTask | undefined;
-		let currentTaskBpm: NotionBpmDatabaseItem | undefined;
-		if (bpmTable) {
-			currentTaskBpm = bpmTable.tryGetNextCachedEmptyItem();
-			const bpm = currentTaskBpm?.bpm;
-
-			if (bpm !== undefined) {
-				task = {
-					metronomeOptions: {
-						...metronomeOptions,
-						bpm: bpm,
-					},
-					duration,
-				};
-			}
+		if (errors.length > 0) {
+			console.warn(`exercise parsing errors`, errors);
 		}
 
 		(() => {
@@ -226,13 +219,11 @@ class NotionExercise implements Exercise {
 	}
 
 
-	#toNextBpm(currentTask: ExerciseTask, nextBpm: NotionBpmDatabaseItem) {
+	#toNextBpm(currentTask: ExerciseTask, nextBpm: NotionBpmDatabaseItem, nextBpmValue: number) {
 		const task: ExerciseTask = {
 			...currentTask,
-			metronomeOptions: {
-				...currentTask.metronomeOptions,
-				bpm: nextBpm.bpm
-			}
+			baseBpm: nextBpmValue,
+			metronomeTask: applyBaseBpm(nextBpmValue, currentTask.metronomeTask),
 		};
 
 		if (!_.isEqual(this.currentTask, task)) {
@@ -244,15 +235,15 @@ class NotionExercise implements Exercise {
 	}
 
 	async finishTask(task: ExerciseTask): Promise<void> {
-		if (this.currentTask && this.currentTaskBpm && task.metronomeOptions.bpm === this.currentTaskBpm.bpm) {
+		if (this.currentTask && this.currentTaskBpm && task.baseBpm === this.currentTaskBpm.bpm) {
 
-			console.log(`finishing task ${task.metronomeOptions.bpm} bpm`);
+			console.log(`finishing task ${task.baseBpm} bpm`);
 
 			await this.currentTaskBpm.setCurrentDate();
 			const nextBpm = this.bpmTable?.tryGetNextCachedEmptyItem(this.currentTaskBpm);
 			if (nextBpm?.bpm !== undefined) {
-				console.log(`task ${task.metronomeOptions.bpm} bpm finished, using cached next task`);
-				this.#toNextBpm(this.currentTask, nextBpm);
+				console.log(`task ${task.baseBpm} bpm finished, using cached next task`);
+				this.#toNextBpm(this.currentTask, nextBpm, nextBpm.bpm);
 			} else {
 				console.log(`task finished, refreshing current task`);
 				await this.refreshTask();

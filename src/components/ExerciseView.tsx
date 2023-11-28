@@ -146,8 +146,7 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 			)}
 			{currentTask && (
 				<Metronome
-					options={currentTask.metronomeOptions}
-					duration={currentTask.duration}
+					task={currentTask.metronomeTask}
 					resetToken={state.currentTask}
 					onStateChanged={onMetronomeStateChanged}
 				/>

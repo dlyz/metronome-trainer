@@ -1,10 +1,10 @@
 import { MetronomeOptions } from "../metronome";
-import { MetronomeDuration } from "../metronome/core";
+import { MetronomeTask, MetronomeTaskPart, MetronomeTaskPartDuration } from "../metronome/core";
 import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto, parseBpmTableSpec } from "./BpmTable";
 
 export interface ExerciseTask {
-	duration?: MetronomeDuration;
-	metronomeOptions: Partial<MetronomeOptions>;
+	baseBpm: number,
+	metronomeTask: MetronomeTask;
 }
 
 export interface Exercise {
@@ -22,8 +22,6 @@ export interface Exercise {
 }
 
 
-
-
 export interface ExerciseDto {
 	type: "exercise";
 	currentTask?: ExerciseTask,
@@ -33,36 +31,118 @@ export interface ExerciseDto {
 }
 
 
-export interface ExerciseSettings {
+export interface ExercisePartSettings {
+	name?: string,
 	bar?: string,
 	t?: string | number,
 	div?: number,
 	accents?: number[],
-	bpms?: string,
 }
 
+export interface ExerciseSettings extends ExercisePartSettings {
+	bpms?: string,
+	parts?: ExercisePartSettings[],
+}
 
 
 export function parseExerciseSettings(
 	settings: ExerciseSettings,
 	appendError?: (error: string) => void
 ): {
-	metronomeOptions: Partial<MetronomeOptions>,
-	duration?: MetronomeDuration,
+	metronomeTask: MetronomeTask,
 	bpmTableSpec?: BpmTableSpec,
 } {
+	//console.log(settings);
 
-	const metronomeOptions: Partial<MetronomeOptions> = {
-		signature: parseBar(settings.bar),
-		beatDivider: parseDiv(settings.div),
-		beatAccents: parseAccents(settings.accents),
-	};
-
-	const duration = parseT(settings.t);
-
+	const metronomeTask = parseMetronomeTask(settings, appendError);
 	const bpmTableSpec = parseBpmTableSpec(settings.bpms, error => appendError?.("BPM table spec: " + error))
 
-	return { metronomeOptions, duration, bpmTableSpec };
+	return { metronomeTask, bpmTableSpec };
+}
+
+
+export function applyBaseBpm(baseBpm: number, task: MetronomeTask): MetronomeTask {
+	return {
+		parts: task.parts.map(p => ({ ...p, bpm: baseBpm })),
+	};
+}
+
+export function parseMetronomeTask(
+	settings: ExerciseSettings,
+	appendError?: (error: string) => void
+): MetronomeTask {
+
+	const defaultOptions: MetronomeOptions = {
+		bpm: 0,
+		signature: [4, 4],
+		beatAccents: { 0: 3 },
+		beatDivider: 1,
+	};
+
+	const defaultDuration: MetronomeTaskPartDuration[] = [{ units: "seconds", value: 60 }];
+
+	const partsFromRoot = parseTaskPart(settings, undefined, defaultOptions, defaultDuration);
+	// assert partsFromRoot.length > 0
+
+	if (settings.parts) {
+		if (Array.isArray(settings.parts) && settings.parts.length > 0) {
+			const fallbackPart = partsFromRoot[0];
+			const fallbackDuration = partsFromRoot.map(p => p.duration);
+			const parts = settings.parts
+				.flatMap(p => {
+					if (p == undefined) {
+						return [];
+					} else if (typeof p !== "object") {
+						appendError?.(`item of 'parts' should be an object, but got ${typeof p}.`);
+						return [];
+					} else {
+						return parseTaskPart(p, fallbackPart.name, fallbackPart, fallbackDuration);
+					}
+				})
+			;
+
+			if (parts.length !== 0) {
+				return { parts };
+			} else {
+				appendError?.("could not find any 'parts'");
+			}
+
+		} else {
+			appendError?.("'parts' should be a non-empty array of part settings.");
+		}
+	}
+
+	return {
+		parts: partsFromRoot,
+	};
+
+	function parseTaskPart(
+		settings: ExercisePartSettings,
+		fallbackName: string | undefined,
+		fallbackOptions: MetronomeOptions,
+		fallbackDuration: MetronomeTaskPartDuration[]
+	): MetronomeTaskPart[] {
+
+		const metronomeOptions: MetronomeOptions = {
+			signature: parseBar(settings.bar) ?? fallbackOptions.signature,
+			beatDivider: parseDiv(settings.div) ?? fallbackOptions.beatDivider,
+			beatAccents: parseAccents(settings.accents) ?? fallbackOptions.beatAccents,
+			bpm: fallbackOptions.bpm,
+		};
+
+		let duration = parseT(settings.t);
+		if (!duration || duration.length === 0) {
+			duration = fallbackDuration;
+		}
+
+		const name = settings.name || fallbackName;
+
+		return duration.map((d, i) => ({
+			name: duration!.length === 1 ? name : name ? (name + " " + (i+1)) : undefined,
+			...metronomeOptions,
+			duration: d,
+		}));
+	}
 
 	function parseBar(bar: string | undefined): [number, number] | undefined {
 
@@ -87,7 +167,6 @@ export function parseExerciseSettings(
 	}
 
 	function parseDiv(div: number | undefined) {
-
 		if (div === undefined) return undefined;
 		else if (typeof div !== 'number') return fail();
 
@@ -99,7 +178,6 @@ export function parseExerciseSettings(
 			appendError?.(`invalid beat divider: ${div}, expected positive integer`);
 			return undefined;
 		}
-
 	}
 
 
@@ -117,7 +195,7 @@ export function parseExerciseSettings(
 
 	}
 
-	function parseT(t: ExerciseSettings["t"]): MetronomeDuration | undefined {
+	function parseT(t: ExerciseSettings["t"]): MetronomeTaskPartDuration[] | undefined {
 
 		if (t === undefined) return undefined;
 
@@ -127,15 +205,16 @@ export function parseExerciseSettings(
 				return fail(t);
 			}
 
-			return { units: "measures", chunks: [t] };
+			return [{ units: "measures", value: t }];
 
+		} else if (Array.isArray(t)) {
+			return t.flatMap(chunk => parseT(chunk) ?? []);
 		} else if (typeof t !== 'string') {
 			return fail(t);
 		}
 
 		const chunks = t.split(',');
-		let units: MetronomeDuration["units"] | undefined;
-		const result = [];
+		const result: MetronomeTaskPartDuration[] = [];
 
 		for (const chunk of chunks) {
 
@@ -151,40 +230,23 @@ export function parseExerciseSettings(
 			}
 
 
-			let val = Number.parseFloat(str);
-			if (Number.isNaN(val) || val <= 0) {
+			let value = Number.parseFloat(str);
+			if (Number.isNaN(value) || value <= 0) {
 				return fail(chunk);
 			}
 
+			let units: MetronomeTaskPartDuration["units"];
 			if (secondsMul !== undefined) {
-				val *= secondsMul;
-				if (units && units !== "seconds") {
-					return failMixedChunks();
-				}
+				value *= secondsMul;
 				units = "seconds";
 			} else {
-				if (units && units !== "measures") {
-					return failMixedChunks();
-				}
 				units = "measures";
 			}
 
-			result.push(val);
+			result.push({ units, value });
 		}
 
-		if (units === undefined) {
-			return fail(t);
-		}
-
-		return {
-			units,
-			chunks: result,
-		};
-
-		function failMixedChunks() {
-			appendError?.(`invalid duration time: ${t}, mixing measures and time is not supported`);
-			return undefined;
-		}
+		return result;
 
 		function fail(t: any) {
 			appendError?.(`invalid duration time: ${t}, expected number of measures or {seconds}s or {minutes}m`);
@@ -193,3 +255,4 @@ export function parseExerciseSettings(
 	}
 
 }
+

@@ -63,7 +63,7 @@ export function parseBpmTableSpec(
 			prepareForGroupPropChange();
 
 			const itemsPerPageStr = instruction.substring(1);
-			const itemsPerPage = Number.parseInt(instruction.substring(1), 10);
+			const itemsPerPage = Number.parseFloat(instruction.substring(1));
 			if (!isNaturalNumber(itemsPerPage)) {
 				appendError?.(`items per page should be a positive integer, but got ${itemsPerPageStr}`);
 			} else {
@@ -83,14 +83,14 @@ export function parseBpmTableSpec(
 				return fail(`multiple ranges ('-') are not expected in the single instruction '${instruction}'`);
 			}
 
-			const from = Number.parseInt(chunks[0], 10);
+			const from = Number.parseFloat(chunks[0]);
 			if (!isNaturalNumber(from)) {
 				return fail(`lower bound expected to be a natural number in instruction '${instruction}'`);
 			}
 
 			let to = from;
 			if (len2 - len1 === 1) {
-				to = Number.parseInt(chunks[1], 10);
+				to = Number.parseFloat(chunks[1]);
 
 				if (!isNaturalNumber(to)) {
 					return fail(`upper bound expected to be a natural number in instruction '${instruction}'`);
@@ -103,7 +103,7 @@ export function parseBpmTableSpec(
 
 			let step = 1;
 			if (len1 === 2) {
-				step = Number.parseInt(chunks[len2 - 1], 10);
+				step = Number.parseFloat(chunks[len2 - 1]);
 
 				if (!isNaturalNumber(step)) {
 					return fail(`step expected to be a natural number in instruction '${instruction}'`);

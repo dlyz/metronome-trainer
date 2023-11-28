@@ -1,43 +1,53 @@
-import { MetronomeMeasureConfig, MetronomeStopwatch } from "./stopwatch";
 import { Player } from "./Player";
+import { MetronomeMeasureConfig, MetronomeCursor, MetronomeTaskImpl } from "./measureCalc";
 
 export class NoteScheduler {
 
-	readonly #intervalToken: number;
-	#nextMeasureToScheduleAudioTime: number;
-	#chunkRemainedMeasures?: number;
-	#chunksQueue: number[];
+	#intervalToken = 0;
+	#taskCursor;
 
-	readonly #displayWakeLock;
+	#lastScheduledNoteStartTime = 0;
+	#lastScheduledNoteFinishTime = 0;
 
 	constructor(
-		readonly measureConfig: MetronomeMeasureConfig,
 		readonly player: Player,
-		readonly stopwatch: MetronomeStopwatch
+		readonly task: MetronomeTaskImpl,
 	) {
-		this.#nextMeasureToScheduleAudioTime = this.player.currentAudioTime + 0.1;
+		this.#taskCursor = new MetronomeCursor(task);
+		this.resume();
+	}
 
-		const chunks = stopwatch.resume(player, this.#nextMeasureToScheduleAudioTime, this.measureConfig);
-		this.#chunksQueue = chunks?.measures ?? [];
-		if (chunks) {
-			this.#chunkRemainedMeasures = this.#chunksQueue.shift() ?? 0;
-		}
+	suspend() {
+		const player = this.player;
+		this.#doAfterCurrentNoteFinish(() => player.suspend());
+		clearInterval(this.#intervalToken);
+	}
+
+	resume() {
+		this.player.resume();
 		this.#intervalToken = setInterval(this.#onIntervalCallback, NoteScheduler.#workerIntervalS * 1000);
 		this.#onIntervalCallback();
-
-
-		// temp solution. ideally this should be an option,
-		// and the sound should continue during the display sleep, but for now we do not schedule whole task
-		// and we rely on js timer witch require display to function.
-		// also after wakeup background worker is reloaded and completed task may be lost
-		this.#displayWakeLock = navigator.wakeLock?.request("screen");
 	}
 
 	close() {
-		this.#displayWakeLock?.then(l => l.release());
-		this.player.close();
 		clearInterval(this.#intervalToken);
-		this.stopwatch.suspend();
+
+		const player = this.player;
+		this.#doAfterCurrentNoteFinish(() => player.close());
+	}
+
+	#doAfterCurrentNoteFinish(action: () => void) {
+
+		const time = this.player.currentAudioTime;
+		const eps = 0.005;
+		if (time >= this.#lastScheduledNoteStartTime - eps && time < this.#lastScheduledNoteFinishTime + eps) {
+			// letting the last note to complete playing
+			setTimeout(() => {
+				action();
+			}, (this.#lastScheduledNoteFinishTime + eps - time) * 1000);
+		} else {
+			action();
+		}
 	}
 
 	static readonly #workerIntervalS = 7;
@@ -47,64 +57,75 @@ export class NoteScheduler {
 
 		const currentTime = this.player.currentAudioTime;
 		const scheduleUntil = currentTime + NoteScheduler.#prescheduledIntervalS;
+		const cursor = this.#taskCursor;
 
-		while (this.#nextMeasureToScheduleAudioTime < scheduleUntil) {
-			const chunkRemainedMeasuresBeforeCurrent = this.#chunkRemainedMeasures;
-			if (this.#chunkRemainedMeasures !== undefined) {
-				if (this.#chunkRemainedMeasures === 0) {
-					if (this.#chunksQueue.length !== 0) {
-						this.#chunkRemainedMeasures = this.#chunksQueue.shift()!;
-					} else {
-						this.#scheduleTransition(this.#nextMeasureToScheduleAudioTime, 0);
-						clearInterval(this.#intervalToken);
-						return;
-					}
-				}
+		if (cursor.finished) {
+			clearInterval(this.#intervalToken);
+			return;
+		}
 
-				--this.#chunkRemainedMeasures;
-			}
+		while (cursor.measureStartTime < scheduleUntil) {
 
-			this.#nextMeasureToScheduleAudioTime = this.#scheduleMeasure(
-				this.#nextMeasureToScheduleAudioTime,
-				chunkRemainedMeasuresBeforeCurrent
+			const partRemainedMeasuresBeforeCurrent = (cursor.partMeasureIndex === 0 && cursor.partIndex !== 0) ? 0 : cursor.remainedPartMeasures;
+
+			this.#scheduleMeasure(
+				cursor.part.measure,
+				cursor.measureStartTime,
+				partRemainedMeasuresBeforeCurrent
 			);
+
+			cursor.advanceMeasure();
+			if (cursor.finished) {
+				this.#scheduleTransition(cursor.measureStartTime, 0);
+				clearInterval(this.#intervalToken);
+				return;
+			}
 
 		}
 	};
 
-	#scheduleMeasure(startTime: number, chunkRemainedMeasuresBeforeCurrent: number | undefined): number {
+	#scheduleMeasure(
+		measureConfig: MetronomeMeasureConfig,
+		startTime: number,
+		partRemainedMeasuresBeforeCurrent: number | undefined
+	): void {
 
-		const { beatsCount, beatDuration, beatAccents, beatNotesShifts } = this.measureConfig;
+		const { beatsCount, beatDuration, beatAccents, beatNotesShifts } = measureConfig;
 
 		let time = startTime;
 
-		let skipFirstBeatNote = this.#scheduleTransition(time, chunkRemainedMeasuresBeforeCurrent);
-		skipFirstBeatNote &&= beatNotesShifts[0] === 0;
+		let skipFirstBeatNote = this.#scheduleTransition(time, partRemainedMeasuresBeforeCurrent);
 		for (let index = 0; index < beatsCount; index++, time += beatDuration) {
 
 			const accent = beatAccents[index] ?? 1;
 			if (accent !== 0) {
 				if (!skipFirstBeatNote) {
-					this.player.scheduleClick(time + beatNotesShifts[0], accent);
+					this.#lastScheduledNoteStartTime = time + beatNotesShifts[0]
+					this.#scheduleClick(time + beatNotesShifts[0], accent);
 				}
 				for (let noteIndex = 1; noteIndex < beatNotesShifts.length; ++noteIndex) {
-					this.player.scheduleClick(time + beatNotesShifts[noteIndex], 1);
+					this.#scheduleClick(time + beatNotesShifts[noteIndex], 1);
 				}
 			}
 
 			skipFirstBeatNote = false;
 		}
-
-		return time;
 	}
 
-	#scheduleTransition(time: number, chunkRemainedMeasuresBeforeCurrent: number | undefined): boolean {
+	#scheduleClick(time: number, accent: 1 | 2 | 3) {
+		this.#lastScheduledNoteStartTime = time;
+		this.#lastScheduledNoteFinishTime = this.player.scheduleClick(time, accent);
+	}
 
-		if (chunkRemainedMeasuresBeforeCurrent === 1) {
-			this.player.scheduleTransition(time, 2);
+	#scheduleTransition(time: number, partRemainedMeasuresBeforeCurrent: number | undefined): boolean {
+
+		this.#lastScheduledNoteStartTime = time;
+
+		if (partRemainedMeasuresBeforeCurrent === 1) {
+			this.#lastScheduledNoteFinishTime = this.player.scheduleTransition(time, 2);
 			return true;
-		} else if (chunkRemainedMeasuresBeforeCurrent === 0) {
-			this.player.scheduleTransition(time, 1);
+		} else if (partRemainedMeasuresBeforeCurrent === 0) {
+			this.#lastScheduledNoteFinishTime = this.player.scheduleTransition(time, 1);
 			return true;
 		} else {
 			return false;

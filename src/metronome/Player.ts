@@ -1,14 +1,53 @@
 import { AudioClock } from "./stopwatch";
 
 export interface Player extends AudioClock {
-	readonly currentAudioTime: number;
-	scheduleClick(audioTime: number, accentValue: 1 | 2 | 3): void;
-	scheduleTransition(audioTime: number, accentValue: 1 | 2 | 3): void;
 
+	readonly currentAudioTime: number;
+
+	/**
+	 * Returns click finish time.
+	 */
+	scheduleClick(audioTime: number, accentValue: 1 | 2 | 3): number;
+
+	/**
+	 * Returns transition finish time.
+	 */
+	scheduleTransition(audioTime: number, transitionLevel: 1 | 2): number;
+
+	suspend(): void;
+	resume(): void;
 	close(): void;
 }
 
-export class SimplePlayer implements Player {
+export class StartShiftedPlayer implements Player {
+	constructor(
+		readonly player: Player,
+		readonly startShift: number
+	) {
+	}
+
+	get currentAudioTime() {
+		return this.player.currentAudioTime - this.startShift;
+	}
+
+	scheduleClick(audioTime: number, accentValue: 1 | 2 | 3) {
+		return this.player.scheduleClick(audioTime + this.startShift, accentValue) - this.startShift;
+	}
+
+	scheduleTransition(audioTime: number, transitionLevel: 1 | 2) {
+		return this.player.scheduleTransition(audioTime + this.startShift, transitionLevel) - this.startShift;
+	}
+
+	suspend() { return this.player.suspend(); }
+	resume() { return this.player.resume(); }
+	close() { return this.player.close(); }
+}
+
+export function createSimplePlayer(): Player {
+	return new StartShiftedPlayer(new SimplePlayer(), 0.1);
+}
+
+class SimplePlayer implements Player {
 
 	readonly #audioContext: AudioContext;
 	readonly #oscillator: OscillatorNode;
@@ -44,10 +83,19 @@ export class SimplePlayer implements Player {
 		tmposc.connect(tmpgane);
 		tmpgane.connect(this.#ac2.destination);
 		tmposc.start();
-
 	}
 
 	get currentAudioTime() { return this.#audioContext.currentTime; }
+
+	suspend() {
+		this.#audioContext.suspend();
+		this.#ac2.suspend();
+	}
+
+	resume() {
+		this.#audioContext.resume();
+		this.#ac2.resume();
+	}
 
 	close() {
 		this.#oscillator.stop();
@@ -83,22 +131,24 @@ export class SimplePlayer implements Player {
 		gainParam.setValueAtTime(minGain, audioTime);
 		gainParam.linearRampToValueAtTime(gain, audioTime + attack);
 		gainParam.linearRampToValueAtTime(minGain, audioTime + attack + release);
+
+		return audioTime + attack + release;
 	}
 
-	scheduleTransition(audioTime: number, accentValue: 1 | 2 | 3): void {
+	scheduleTransition(audioTime: number, transitionLevel: 1 | 2): number {
 		const freqParam = this.#oscillator.frequency;
 		const gainParam = this.#gain.gain;
 
-		const [frequency, volume] = [accentValue === 1 ? 440 : 880, 1];
+		const [frequency, volume] = [transitionLevel === 1 ? 440 : 880, 1];
 		const maxGain = 2;
 		const minGain = 0;
 		const gain = maxGain * volume;
 
 		const attack = 0.005;
 		const release = 0.01;
-		const pause = accentValue === 1 ? 0.08 : 0.04;
+		const pause = transitionLevel === 1 ? 0.08 : 0.04;
 
-		for (let index = 0; index < (accentValue === 1 ? 3 : 2); index++) {
+		for (let index = 0; index < (transitionLevel === 1 ? 3 : 2); index++) {
 			freqParam.setValueAtTime(frequency, audioTime);
 			gainParam.setValueAtTime(minGain, audioTime);
 			gainParam.linearRampToValueAtTime(gain, audioTime + attack);
@@ -107,6 +157,8 @@ export class SimplePlayer implements Player {
 		}
 
 		// todo: use package adsr-envelope
+
+		return audioTime;
 	}
 }
 
