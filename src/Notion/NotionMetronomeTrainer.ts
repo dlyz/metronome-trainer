@@ -5,11 +5,12 @@ import {
 	PageObjectResponse,
 	getAllPages
 } from "./NotionApi";
-import jsYaml from "js-yaml";
+import jsYaml, { YAMLException } from "js-yaml";
 import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
-import { Exercise, ExerciseSettings, ExerciseTask, applyBaseBpm, parseExerciseSettings } from "../models/Exercise";
+import { Exercise, ExerciseSettings, parseExerciseSettings } from "../models/Exercise";
+import { ExerciseTask, createMetronomeTask } from "../models/ExerciseTask";
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
@@ -175,7 +176,12 @@ class NotionExercise implements Exercise {
 			try {
 				settings = jsYaml.load(settingText) as ExerciseSettings;
 			} catch (ex) {
-				errors.push("invalid yaml: " + settingText);
+				if (ex instanceof YAMLException) {
+					errors.push("exercise settings: failed to parse yaml: " + ex.message);
+				} else {
+					console.error(ex);
+					errors.push("exercise settings: failed to parse yaml: " + settingText);
+				}
 			}
 		}
 
@@ -191,7 +197,8 @@ class NotionExercise implements Exercise {
 		if (bpm !== undefined) {
 			task = {
 				baseBpm: bpm,
-				metronomeTask: applyBaseBpm(bpm, metronomeTask),
+				sourceMetronomeTask: metronomeTask,
+				metronomeTask: createMetronomeTask({ baseBpm: bpm }, metronomeTask),
 			};
 		}
 
@@ -223,7 +230,7 @@ class NotionExercise implements Exercise {
 		const task: ExerciseTask = {
 			...currentTask,
 			baseBpm: nextBpmValue,
-			metronomeTask: applyBaseBpm(nextBpmValue, currentTask.metronomeTask),
+			metronomeTask: createMetronomeTask({ baseBpm: nextBpmValue }, currentTask.sourceMetronomeTask),
 		};
 
 		if (!_.isEqual(this.currentTask, task)) {

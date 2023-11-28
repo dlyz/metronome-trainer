@@ -1,7 +1,8 @@
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto } from "../models/BpmTable";
-import { Exercise, ExerciseDto, ExerciseTask } from "../models/Exercise";
+import { Exercise, ExerciseDto } from "../models/Exercise";
+import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory, ExercisePageDto } from "../models/ExercisePage";
 import { TabEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest, ExceptionResponse, NonTabServerRequest, ServerRequest, TabsRuntimeEvent } from "./messages";
 

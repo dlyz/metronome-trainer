@@ -17,13 +17,16 @@ export class NoteScheduler {
 		this.resume();
 	}
 
+	#suspendTimeoutToken?: number;
+
 	suspend() {
 		const player = this.player;
-		this.#doAfterCurrentNoteFinish(() => player.suspend());
+		this.#suspendTimeoutToken = this.#doAfterCurrentNoteFinish(() => player.suspend());
 		clearInterval(this.#intervalToken);
 	}
 
 	resume() {
+		clearTimeout(this.#suspendTimeoutToken);
 		this.player.resume();
 		this.#intervalToken = setInterval(this.#onIntervalCallback, NoteScheduler.#workerIntervalS * 1000);
 		this.#onIntervalCallback();
@@ -42,11 +45,12 @@ export class NoteScheduler {
 		const eps = 0.005;
 		if (time >= this.#lastScheduledNoteStartTime - eps && time < this.#lastScheduledNoteFinishTime + eps) {
 			// letting the last note to complete playing
-			setTimeout(() => {
+			return setTimeout(() => {
 				action();
 			}, (this.#lastScheduledNoteFinishTime + eps - time) * 1000);
 		} else {
 			action();
+			return undefined;
 		}
 	}
 

@@ -1,7 +1,8 @@
 import React, { useCallback, useLayoutEffect, useReducer, useState } from "react";
 import { Metronome, MetronomeState } from "./Metronome";
 import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
-import { Exercise, ExerciseTask } from "../models/Exercise";
+import { Exercise } from "../models/Exercise";
+import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
 import { ArrowCircleUpFilled, ArrowSyncFilled, DocumentSyncRegular, NextFilled, TableSimpleIncludeRegular } from "@fluentui/react-icons";
 
