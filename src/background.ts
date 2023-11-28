@@ -64,23 +64,27 @@ async function start() {
 
 	chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
+		//console.log(`--tab change info:`, changeInfo);
+
+		let pageId;
 		let pageToRefresh;
 		if (changeInfo.url) {
-			const [updated, pageId] = updateTab(tabId, changeInfo.url);
+			let updated;
+			[updated, pageId] = updateTab(tabId, changeInfo.url);
 			if (pageId && !updated && changeInfo.status === "complete") {
 				pageToRefresh = trackedPages.get(pageId);
 			}
 
-		} else if (changeInfo.status === "complete") {
+		} else if (changeInfo.status === "loading" && !changeInfo.url) {
 
-			const pageId = backend.getPageIdFromUrl(tab.url);
+			pageId = backend.getPageIdFromUrl(tab.url);
 			if (pageId) {
 				pageToRefresh = trackedPages.get(pageId);
 			}
 		}
 
 		if (pageToRefresh) {
-			console.log(`refreshing page ${pageToRefresh.pageId}`);
+			console.log(`refreshing page ${pageToRefresh.pageId}. tab change info:`, changeInfo);
 			pageToRefresh.page.refreshPage();
 		}
 
