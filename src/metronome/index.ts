@@ -101,16 +101,15 @@ export class Metronome {
 	}
 
 
-	get partElapsedSeconds() {
-		const sw = this.#stopwatch;
-		if (!sw) return 0;
-		return sw.clock.currentAudioTime - sw.taskCursor.partStartTime;
+	get totalElapsedSeconds() {
+		return this.#stopwatch?.clock.currentAudioTime ?? 0;
 	}
 
-	get position(): MetronomePosition {
-		return this.#stopwatch?.taskCursor.position
-			?? { partMeasureIndex: 0, beatNoteIndex: 0, measureBeatIndex: 0, partIndex: 0 };
-	}
+	get task() { return this.#stopwatch?.task.task; }
+
+	get position() { return this.#stopwatch?.position; }
+
+	get lastNotePosition() { return this.#stopwatch?.lastNotePosition; }
 }
 
 

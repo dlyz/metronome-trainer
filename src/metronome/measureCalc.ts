@@ -87,7 +87,6 @@ export class MetronomeCursor {
 	constructor(
 		readonly task: MetronomeTaskImpl
 	) {
-		this
 	}
 
 	partIndex = 0;
@@ -116,6 +115,7 @@ export class MetronomeCursor {
 			partMeasureIndex: this.partMeasureIndex,
 			measureBeatIndex: this.measureBeatIndex,
 			beatNoteIndex: this.beatNoteIndex,
+			partStartTime: this.partStartTime,
 		};
 	}
 

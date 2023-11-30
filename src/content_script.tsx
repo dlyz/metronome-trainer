@@ -48,8 +48,8 @@ async function start() {
 					container.id = "metronome-trainer-container";
 					container.style.zIndex = "1000";
 					container.style.position = "absolute";
-					container.style.bottom = "10px";
-					container.style.right = "10px";
+					container.style.bottom = "6px";
+					container.style.right = "6px";
 					document.body.appendChild(container);
 				}
 

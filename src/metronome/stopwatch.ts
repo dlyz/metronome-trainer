@@ -9,10 +9,10 @@ export interface AudioClock {
 }
 
 
+
 export class MetronomeStopwatch {
 
-	readonly #finishEvent;
-	readonly taskCursor;
+	readonly #cursor;
 
 	constructor(
 		readonly clock: AudioClock,
@@ -20,15 +20,18 @@ export class MetronomeStopwatch {
 		readonly clickHandler?: ClickEventHandler,
 		onFinished?: () => void,
 	) {
-		this.#finishEvent = new TimerFinishEvent(onFinished);
-		this.taskCursor = new MetronomeCursor(task);
+		this.#cursor = new StopwatchCursor(task, onFinished);
 		this.resume();
 	}
 
 	#runState?: RunState;
 
+	get position() { return this.#cursor.currentNotePosition; }
+
+	get lastNotePosition() { return this.#cursor.lastNotePosition; }
+
 	get finished() {
-		return this.#finishEvent.finished;
+		return this.#cursor.finished;
 	}
 
 	resume() {
@@ -36,9 +39,8 @@ export class MetronomeStopwatch {
 
 		this.#runState = new RunState(
 			this.clock,
-			this.taskCursor,
-			this.clickHandler,
-			this.#finishEvent
+			this.#cursor,
+			this.clickHandler
 		);
 	}
 
@@ -59,11 +61,10 @@ class RunState {
 
 	constructor(
 		readonly clock: AudioClock,
-		readonly cursor: MetronomeCursor,
+		readonly cursor: StopwatchCursor,
 		readonly clickHandler: ClickEventHandler | undefined,
-		readonly finishEvent: TimerFinishEvent,
 	) {
-		this.#reschedule(cursor.noteStartTime - clock.currentAudioTime);
+		this.#reschedule(cursor.nextNoteCursor.noteStartTime - clock.currentAudioTime);
 	}
 
 	#timeoutToken: number | undefined;
@@ -76,7 +77,7 @@ class RunState {
 	}
 
 	#startInterval = () => {
-		this.#intervalToken = setInterval(this.#click, this.cursor.part.measure.noteInterval * 1000);
+		this.#intervalToken = setInterval(this.#click, this.cursor.nextNoteCursor.part.measure.noteInterval * 1000);
 		this.#click();
 	};
 
@@ -92,18 +93,20 @@ class RunState {
 
 	#click = () => {
 
-		if (this.finishEvent.finished) return;
+		const cursor = this.cursor;
+		if (cursor.finished) return;
 
-		if (this.cursor.finished) {
+		const nextNoteCursor = cursor.nextNoteCursor;
+
+		if (nextNoteCursor.finished) {
 			this.#scheduleFinish();
 			return;
 		}
 
-		const cursor = this.cursor;
-		const part = cursor.part;
+		const part = nextNoteCursor.part;
 		const measure = part.measure;
 
-		const noteExpectedTime = this.cursor.noteStartTime;
+		const noteExpectedTime = nextNoteCursor.noteStartTime;
 		const noteActualTime = this.clock.currentAudioTime;
 
 		const timeError = noteActualTime - noteExpectedTime;
@@ -112,35 +115,32 @@ class RunState {
 
 
 
-		let accent = measure.beatAccents[cursor.measureBeatIndex] ?? 1;
-		if (cursor.beatNoteIndex !== 0 && accent !== 0) {
+		let accent = measure.beatAccents[nextNoteCursor.measureBeatIndex] ?? 1;
+		if (nextNoteCursor.beatNoteIndex !== 0 && accent !== 0) {
 			accent = 1;
 		}
 
+		cursor.advanceNoteBeforeClick();
 		this.clickHandler?.({
-			partIndex: cursor.partIndex,
-			partMeasureIndex: cursor.partMeasureIndex,
-			measureBeatIndex: cursor.measureBeatIndex,
-			beatNoteIndex: cursor.beatNoteIndex,
+			...cursor.currentNotePosition,
 			accent,
 		});
 
-		cursor.advanceNote();
-		if (cursor.finished) {
+		if (nextNoteCursor.finished) {
 			this.#scheduleFinish();
-		} else if (cursor.part.measure.noteInterval !== measure.noteInterval) {
+		} else if (nextNoteCursor.part.measure.noteInterval !== measure.noteInterval) {
 			// interval has changed
-			this.#reschedule(cursor.noteStartTime - this.clock.currentAudioTime);
+			this.#reschedule(nextNoteCursor.noteStartTime - this.clock.currentAudioTime);
 		} else {
 
 			// todo: make correction dependent on the noteErrorInterval and noteErrorCount
 			const avgError = this.noteErrorSum / this.noteErrorCount;
 
-			if (cursor.noteStartTime < noteActualTime) {
+			if (nextNoteCursor.noteStartTime < noteActualTime) {
 				// next note should already be fired;
 				this.#reschedule(0);
 			} else if (this.noteErrorCount >= 8 && Math.abs(avgError) > RunState.#errorThreshold || Math.abs(avgError)*4 > measure.noteInterval) {
-				const nextNoteExpectedTime = cursor.noteStartTime;
+				const nextNoteExpectedTime = nextNoteCursor.noteStartTime;
 				const correction = (avgError > 0 ? avgError : (avgError / 2)) / 10;
 				const nextInterval = nextNoteExpectedTime - this.clock.currentAudioTime - correction;
 				//console.log(`meas: ${this.#elapsedMeasures} correction. error: ${avgError}`);
@@ -155,11 +155,12 @@ class RunState {
 
 		clearInterval(this.#intervalToken);
 
-		if (this.finishEvent.finished) return;
+		const cursor = this.cursor;
+		if (cursor.finished) return;
 
-		const remainedTime = this.cursor.measureStartTime - this.clock.currentAudioTime;
+		const remainedTime = cursor.nextNoteCursor.measureStartTime - this.clock.currentAudioTime;
 		if (remainedTime <= 0) {
-			this.finishEvent.finish();
+			cursor.finish();
 			return;
 		}
 
@@ -168,6 +169,42 @@ class RunState {
 }
 
 
+class StopwatchCursor {
+
+	constructor(
+		task: MetronomeTaskImpl,
+		private onFinished?: () => void,
+	) {
+		this.nextNoteCursor = new MetronomeCursor(task);
+		this.currentNotePosition = this.lastNotePosition = {
+			beatNoteIndex: -1,
+			measureBeatIndex: -1,
+			partIndex: -1,
+			partMeasureIndex: -1,
+			partStartTime: 0,
+		};
+	}
+
+	readonly nextNoteCursor;
+	currentNotePosition: MetronomePosition;
+	lastNotePosition: MetronomePosition;
+	#finishCompleted = false;
+
+	advanceNoteBeforeClick() {
+		this.currentNotePosition = this.lastNotePosition = this.nextNoteCursor.position;
+		this.nextNoteCursor.advanceNote();
+	}
+
+	get finished() {
+		return this.#finishCompleted;
+	}
+
+	finish() {
+		this.#finishCompleted = true;
+		this.currentNotePosition = this.nextNoteCursor.position;
+		this.onFinished?.();
+	};
+}
 
 // class DurationTimer {
 
@@ -211,26 +248,6 @@ class RunState {
 // 	}
 // }
 
-
-
-
-class TimerFinishEvent {
-
-	constructor(readonly onFinished?: () => void) {
-
-	}
-
-	#finishCompleted = false;
-
-	get finished() {
-		return this.#finishCompleted;
-	}
-
-	finish() {
-		this.#finishCompleted = true;
-		this.onFinished?.();
-	};
-}
 
 
 

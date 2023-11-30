@@ -11,36 +11,66 @@ export interface MetronomeProps {
 	task: MetronomeTask,
 	resetToken?: any,
 	onStateChanged?: (state: MetronomeState) => void,
+	onClick?: (core: MetronomeCore, descriptor: ClickDescriptor) => void;
 }
 
 export enum MetronomeState {
 	Stopped,
 	Playing,
 	Paused,
-	Finished = 3,
+	Finished,
 }
 
 const useClasses = makeStyles({
 	card: {
-		height: "78px",
-		width: "370px",
-		paddingTop: "4px",
-		paddingBottom: "4px",
+		height: "88px",
+		width: "410px",
+		paddingTop: 0,
+		paddingBottom: 0,
 	},
-	root: {
+	cardBottom: {
+		...shorthands.margin(0, "calc(var(--fui-Card--size) * -1)"),
+		...shorthands.padding(0, "var(--fui-Card--size)"),
+		backgroundColor: "#00000010",
+		height: "100%",
+	},
+
+	hRoot: {
 		display: "flex",
 		flexDirection: "row",
 		alignItems: "center",
-		columnGap: "16px",
+		columnGap: "12px",
+		...shorthands.margin("4px", 0),
 	},
-	bpmSection: {
+	vRoot: {
+		...shorthands.flex(1),
+		alignSelf: "stretch",
+
 		display: "flex",
 		flexDirection: "column",
-		alignItems: "center",
 	},
+	vRootBottom: {
+		minWidth: 0,
+		display: "flex",
+	},
+
+	clickViewContainer: {
+		...shorthands.flex(1),
+		display: "flex",
+		alignSelf: "stretch",
+	},
+
+	elapsedViewContainer: {
+		minWidth: 0,
+		...shorthands.flex(1),
+		display: "flex",
+		...shorthands.margin("2px", "2px", "2px", 0),
+	},
+
+
 	playPauseButton: {
 		maxWidth: "initial",
-		...shorthands.margin("-6px"),
+		...shorthands.margin("-4px"),
 		'& > span': {
 			height: "initial",
 			width: "initial",
@@ -50,24 +80,11 @@ const useClasses = makeStyles({
 		}
 
 	},
-	clickSection: {
-		...shorthands.flex(1),
-		alignSelf: "stretch",
-
-		display: "flex",
-		flexDirection: "column",
-	},
-	clickViewContainer: {
-		...shorthands.flex(1),
-		display: "flex",
-	},
-	clickSectionBottom: {
-		display: "flex",
-	},
-	elapsedViewContainer: {
-		...shorthands.flex(1),
-		display: "flex",
-	},
+	resetButton: {
+		marginBottom: "-1px",
+		marginLeft: "4px",
+		marginRight: "-9px",
+	}
 
 });
 
@@ -77,32 +94,40 @@ const resetClickDescriptor: ClickDescriptor = {
 	measureBeatIndex: -1,
 	beatNoteIndex: 0,
 	accent: 0,
+	partStartTime: 0,
 };
 
 export const Metronome = React.memo(function (props: MetronomeProps) {
 
 	const { core, clickEvent } = useInitializedRef(() => ({
 		core: new MetronomeCore(),
-		clickEvent: new EventControl<[ClickDescriptor]>(),
+		clickEvent: new EventControl<[MetronomeCore, ClickDescriptor]>(),
 	})).current;
 
 	const [currentPartIndex, setCurrentPartIndex] = useState(0);
 
 	useEffect(() => {
-		clickEvent.add(d => {
+		clickEvent.add((core, d) => {
 			setCurrentPartIndex(d.partIndex);
 		})
 		return () => core.stop();
 	}, []);
 
-	const { task, onStateChanged, resetToken } = props;
+	const { task, onStateChanged, resetToken, onClick } = props;
+
+	useEffect(() => {
+		if (onClick) {
+			clickEvent.add(onClick);
+			return () => clickEvent.remove(onClick);
+		}
+	}, [onClick]);
 
 	const [state, setState] = useState(MetronomeState.Stopped);
 
 	const onFinishedRef = useRef<() => void>();
 
 	onFinishedRef.current = useCallback(() => {
-		clickEvent.invoke({ ...resetClickDescriptor, partIndex: task.parts.length });
+		clickEvent.invoke(core, { ...resetClickDescriptor, partIndex: task.parts.length });
 		setState(MetronomeState.Paused);
 		onStateChanged?.(MetronomeState.Finished);
 	}, [onStateChanged, task]);
@@ -120,7 +145,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 		} else {
 			core.restart(
 				task,
-				(descriptor) => clickEvent.invoke(descriptor),
+				(descriptor) => clickEvent.invoke(core, descriptor),
 				() => onFinishedRef.current!()
 			);
 			setState(MetronomeState.Playing);
@@ -130,7 +155,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 
 	const onResetClick = useCallback(() => {
 		core.stop();
-		clickEvent.invoke(resetClickDescriptor);
+		clickEvent.invoke(core, resetClickDescriptor);
 		setState(MetronomeState.Stopped);
 		onStateChanged?.(MetronomeState.Stopped);
 	}, [onStateChanged]);
@@ -141,60 +166,112 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 
 	const displayPartIndex = Math.min(currentPartIndex, task.parts.length - 1);
 	const part = task.parts[displayPartIndex];
+	const partView = task.parts.length !== 1;
 
 
 	const classes = useClasses();
 
+	const playPauseButton = (
+		<Button
+			className={classes.playPauseButton}
+			icon={state === MetronomeState.Playing ? <PauseFilled /> : <PlayFilled />}
+			onClick={onPlayPause}
+			appearance="subtle"
+			shape="circular"
+		/>
+	);
+
+	const resetButton = (
+		<Button
+			className={classes.resetButton}
+			icon={<ArrowResetFilled />}
+			onClick={onResetClick}
+			appearance="transparent"
+			size="small"
+		/>
+	);
+
+
 	return <Card className={classes.card}>
-		<div className={classes.root}>
+		{partView ? (
+			<>
+			<div className={classes.vRoot}>
 
-			<div className={classes.bpmSection}>
-				<div>
-					<Text size={600} weight="semibold">{part.bpm}</Text>
-					<Text size={300}> bpm</Text>
-				</div>
-				<div>
-					<Text size={400} align="center">{part.signature[0]}/{part.signature[1]}</Text>
-				</div>
-			</div>
-			<div>
-				<Button
-					className={classes.playPauseButton}
-					icon={ state === MetronomeState.Playing ? <PauseFilled /> : <PlayFilled /> }
-					onClick={onPlayPause}
-					appearance="subtle"
-					shape="circular"
-
-
-				/>
-			</div>
-
-			<div className={classes.clickSection}>
-				<div className={classes.clickViewContainer}>
-					<ClickView options={part} clickEvent={clickEvent} />
+				<div className={classes.hRoot}>
+					<BpmDisplay options={part} />
+					<div>
+						{playPauseButton}
+					</div>
+					<div className={classes.clickViewContainer}>
+						<ClickView options={part} clickEvent={clickEvent} />
+					</div>
 				</div>
 
-				<div className={classes.clickSectionBottom}>
+				<div className={ mergeClasses(classes.vRootBottom, classes.cardBottom)}>
 					<div className={classes.elapsedViewContainer}>
-						<ElapsedView core={core} clickEvent={clickEvent} task={task} />
+						<ElapsedView clickEvent={clickEvent} task={task} />
 					</div>
 
-					<Button
-						icon={ <ArrowResetFilled /> }
-						onClick={onResetClick}
-						appearance="transparent"
-						size="small"
-					/>
+					{resetButton}
+				</div>
+
+			</div>
+			</>
+		) : (
+			<div className={classes.hRoot}>
+				<BpmDisplay options={part} />
+				<div>
+					{playPauseButton}
+				</div>
+
+				<div className={classes.vRoot}>
+					<div className={classes.clickViewContainer}>
+						<ClickView options={part} clickEvent={clickEvent} />
+					</div>
+					<div className={classes.vRootBottom}>
+						<div className={classes.elapsedViewContainer}>
+							<ElapsedView clickEvent={clickEvent} task={task} />
+						</div>
+
+						{resetButton}
+					</div>
 				</div>
 			</div>
-		</div>
+		)}
+
 	</Card>
 
 });
 
-function formatTime(seconds: number) {
-	const min = Math.trunc(seconds / 60);
-	const sec = Math.round(seconds - min * 60);
+
+const useBpmDisplayClasses = makeStyles({
+	root: {
+		minWidth: "88px",
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "center",
+	}
+
+});
+
+function BpmDisplay({ options }: { options: MetronomeOptions }) {
+
+	const classes = useBpmDisplayClasses();
+	return <div className={classes.root}>
+		<div>
+			<Text size={600} weight="semibold">{options.bpm}</Text>
+			<Text size={300}> bpm</Text>
+		</div>
+		<div>
+			<Text size={400} align="center">{options.signature[0]}/{options.signature[1]}</Text>
+		</div>
+	</div>
+}
+
+export function formatTime(seconds: number) {
+	const totalSec = Math.round(seconds);
+	const min = Math.trunc(totalSec / 60);
+	const sec = totalSec - min * 60;
 
 	return min + ":" + (sec < 10 ? '0' : '') + sec;
 }
@@ -202,68 +279,120 @@ function formatTime(seconds: number) {
 
 const useElapsedViewClasses = makeStyles({
 	root: {
+		minWidth: 0,
 		...shorthands.flex(1),
 		display: "flex",
-		alignItems: "end",
+		alignItems: "center",
 		justifyContent: "space-evenly",
+		...shorthands.margin(0, "-4px"),
+	},
+	part: {
+		minWidth: 0,
+		...shorthands.flex(1),
+		display: "flex",
+		...shorthands.margin(0, "4px"),
+		"& > span": {
+			whiteSpace: "nowrap",
+			...shorthands.overflow("hidden"),
+			textOverflow: "ellipsis",
+		}
+	},
+	item: {
+		flexShrink: 0,
+		...shorthands.margin(0, "8px"),
+	},
+	border: {
+		flexShrink: 0,
+		width: "2px",
+		backgroundColor: "#00000018",
+		alignSelf: "stretch",
+		...shorthands.borderRadius("1px"),
+		...shorthands.margin("1px"),
 	}
 
 });
 
-interface PositionState {
-	elapsedMeasures: number,
-	elapsedSeconds: number,
-	elapsedParts: number,
+type PositionState = {
+	partStartTime: number,
+	partElapsedSeconds: number,
+	partIndex: number,
+	partMeasureIndex: number
 }
 
-const ElapsedView = React.memo(function({ core, clickEvent, task }: {
-	core: MetronomeCore,
-	clickEvent: BasicEvent<[ClickDescriptor]>,
+const ElapsedView = React.memo(function ({ clickEvent, task }: {
+	clickEvent: BasicEvent<[MetronomeCore, ClickDescriptor]>,
 	task: MetronomeTask,
 }) {
 
 	const classes = useElapsedViewClasses();
-	const [position, setPosition] = useState<PositionState>({ elapsedParts: 0, elapsedMeasures: 0, elapsedSeconds: 0, });
+	const [position, setPosition] = useState<PositionState>({
+		partStartTime: 0,
+		partElapsedSeconds: 0,
+		partIndex: 0,
+		partMeasureIndex: 0
+	});
 
 	useLayoutEffect(() => {
-		const handler = (d: ClickDescriptor) => {
-			setPosition({
-				elapsedMeasures: d.partMeasureIndex,
-				elapsedSeconds: core.partElapsedSeconds,
-				elapsedParts: d.partIndex,
-			});
+		const handler = (core: MetronomeCore, d: ClickDescriptor) => {
+			if (d.partIndex === core.task?.parts.length) {
+				// want to keep all the info from the last part except for elapsedSeconds.
+				setPosition(p => ({
+					...p,
+					partElapsedSeconds: core.totalElapsedSeconds - p.partStartTime,
+				}));
+
+			} else {
+				setPosition({
+					partStartTime: d.partStartTime,
+					partIndex: d.partIndex,
+					partMeasureIndex: d.partMeasureIndex,
+					partElapsedSeconds: core.totalElapsedSeconds - d.partStartTime,
+				});
+			}
 		};
+
 		clickEvent.add(handler);
 		return () => clickEvent.remove(handler);
 	}, []);
 
 
-	const displayPartIndex = Math.min(position.elapsedParts, task.parts.length - 1);
+	const part = task.parts[position.partIndex];
+	const partText = useMemo(() => {
 
-	const part = task.parts[displayPartIndex];
+		let partText = `${position.partIndex + 1} of ${task.parts.length}`;
+		if (part.name) {
+			partText += ": " + part.name;
+		} else {
+			partText = "Part " + partText;
+		}
+
+		return partText;
+	}, [part]);
+
 
 	return <div className={classes.root}>
-		{ task.parts.length > 1 && (
-			<Text size={400}>
-				part: {displayPartIndex + 1}/{task.parts.length}
-			</Text>
+		{task.parts.length > 1 && (
+		<>
+			<div className={classes.part}>
+				<Text size={400} weight="semibold">
+					{partText}
+				</Text>
+			</div>
+
+			<div className={classes.border} />
+		</>
 		)}
 
-		{ position.elapsedParts !== displayPartIndex ? (
-			<Text size={400}>
-				task completed!
-			</Text>
 
-		) : (
-			<>
-				<Text size={400}>
-					bars: {position.elapsedMeasures}{ part.duration.units === "measures" && ("/" + part.duration.value) }
-				</Text>
-				<Text size={400}>
-					{formatTime(position.elapsedSeconds)}{ part.duration.units === "seconds" && ("/" + formatTime(part.duration.value)) }
-				</Text>
-			</>
-		)}
+		<Text size={400} className={classes.item}>
+			bar: {position.partMeasureIndex + 1}{part.duration.units === "measures" && ("/" + part.duration.value)}
+		</Text>
+		<div className={classes.border} />
+		<Text size={400} className={classes.item}>
+			{formatTime(position.partElapsedSeconds)}{part.duration.units === "seconds" && ("/" + formatTime(part.duration.value))}
+		</Text>
+
+		<div className={classes.border} />
 	</div>
 });
 
@@ -285,13 +414,13 @@ const useClickViewClasses = makeStyles({
 		...shorthands.flex(1),
 		display: "flex",
 		alignItems: "center",
-		justifyContent: "space-around",
+		justifyContent: "space-evenly",
 		//...shorthands.margin("10%", 0),
 	},
 	item: {
 		//backgroundColor: "lightgray",
 		...shorthands.borderRadius("50%"),
-		height: "58%",
+		height: "45%",
 		aspectRatio: "1",
 		position: "relative",
 		top: "1px",
@@ -323,8 +452,8 @@ const useAccentClasses = makeStyles({
 
 
 
-const ClickView = React.memo(function({ clickEvent, options }: {
-	clickEvent: BasicEvent<[ClickDescriptor]>,
+const ClickView = React.memo(function ({ clickEvent, options }: {
+	clickEvent: BasicEvent<[MetronomeCore, ClickDescriptor]>,
 	options: MetronomeOptions,
 }) {
 
@@ -333,7 +462,7 @@ const ClickView = React.memo(function({ clickEvent, options }: {
 	const accentClasses = useAccentClasses();
 
 	useLayoutEffect(() => {
-		const handler: ClickEventHandler = (d) => {
+		const handler = (core: MetronomeCore, d: ClickDescriptor) => {
 			setState({ beatIndex: d.measureBeatIndex, noteIndex: d.beatNoteIndex, accent: d.accent });
 		};
 		clickEvent.add(handler);
@@ -342,7 +471,7 @@ const ClickView = React.memo(function({ clickEvent, options }: {
 
 	const beatsCount = options.signature[0];
 
-	const maxWidth = 90/beatsCount;
+	const maxWidth = 85 / beatsCount;
 	const children = [];
 	for (let index = 0; index < beatsCount; index++) {
 		let className = [classes.item];
@@ -357,13 +486,13 @@ const ClickView = React.memo(function({ clickEvent, options }: {
 		}
 
 		children.push((
-			<div key={index} className={mergeClasses(...className)} style={{maxWidth: maxWidth + "%"}}>
+			<div key={index} className={mergeClasses(...className)} style={{ maxWidth: maxWidth + "%" }}>
 			</div>
 		));
 	}
 
 	return <div className={classes.root}>
-		{ children }
+		{children}
 		{/* <Text size={400}>B: {state.beatIndex}/{beatsCount}, N: {state.noteIndex}/{options.beatDivider}, A: {state.accent}</Text> */}
 	</div>
 });

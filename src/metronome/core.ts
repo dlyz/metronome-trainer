@@ -68,6 +68,7 @@ export interface MetronomePosition {
 	partMeasureIndex: number,
 	measureBeatIndex: number,
 	beatNoteIndex: number,
+	partStartTime: number,
 }
 
 

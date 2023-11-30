@@ -1,10 +1,13 @@
-import React, { useCallback, useLayoutEffect, useReducer, useState } from "react";
-import { Metronome, MetronomeState } from "./Metronome";
-import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
+import React, { useCallback, useEffect, useLayoutEffect, useReducer, useState } from "react";
+import { Metronome, MetronomeState, formatTime } from "./Metronome";
+import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands, Text, tokens, mergeClasses } from "@fluentui/react-components";
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
 import { ArrowCircleUpFilled, ArrowSyncFilled, DocumentSyncRegular, NextFilled, TableSimpleIncludeRegular } from "@fluentui/react-icons";
+import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
+import { BasicEvent, EventControl } from "../Event";
+import { useInitializedRef } from "./reactHelpers";
 
 export interface ExerciseViewProps {
 	page: ExercisePage,
@@ -22,11 +25,24 @@ const useStyles = makeStyles({
 	},
 	buttonPanelSpace: {
 		...shorthands.flex(1),
+		display: "flex",
+		// "& > *": {
+		// 	...shorthands.margin(0, "10px"),
+		// }
 	},
 
 });
 
 export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseViewProps) {
+
+
+	const { clickEventInvoker, clickEvent } = useInitializedRef(() => {
+		const clickEvent = new EventControl<[MetronomeCore, ClickDescriptor]>();
+		return {
+			clickEventInvoker: (core: MetronomeCore, d: ClickDescriptor) => clickEvent.invoke(core, d),
+			clickEvent,
+		};
+	}).current;
 
 	const [state, dispatch] = useReducer(stateReducer, { currentTaskState: MetronomeState.Stopped });
 	const { currentTask, hasNextExercise } = state;
@@ -86,12 +102,14 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 			)}
 
 			{state.newTask && (
-				<Tooltip content="To new task" relationship="description">
+				<Tooltip content="To actual task" relationship="description">
 					<Button onClick={onNewTaskClick} icon={<ArrowCircleUpFilled />} appearance="primary" />
 				</Tooltip>
 			)}
 
-			<div className={styles.buttonPanelSpace} />
+			<div className={styles.buttonPanelSpace + " qqq"}>
+				<TaskStatus clickEvent={clickEvent} task={currentTask} />
+			</div>
 
 			{!!isLoading && <><Spinner size="tiny" /><div/></> }
 
@@ -101,7 +119,7 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 				</Tooltip>
 			)}
 
-			<Tooltip content="Update current task" relationship="description">
+			<Tooltip content="Update actual task" relationship="description">
 				<Button onClick={onUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
 			</Tooltip>
 
@@ -148,8 +166,9 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 			{currentTask && (
 				<Metronome
 					task={currentTask.metronomeTask}
-					resetToken={state.currentTask}
+					resetToken={currentTask}
 					onStateChanged={onMetronomeStateChanged}
+					onClick={clickEventInvoker}
 				/>
 			)}
 		</div>
@@ -245,5 +264,79 @@ function stateReducer(state: State, action: Action): State {
 			currentTaskState: MetronomeState.Stopped,
 			newTask: undefined,
 		};
+	}
+}
+
+
+const useTaskStatusStyles = makeStyles({
+	root: {
+		...shorthands.flex(1),
+		alignSelf: "center",
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "right",
+		columnGap: "8px",
+		color: tokens.colorNeutralForeground2,
+	},
+
+	rootRight: {
+		justifyContent: "right",
+	},
+
+	taskHeader: {
+		//...shorthands.flex(1),
+	},
+
+	border: {
+		flexShrink: 0,
+		width: "2px",
+		backgroundColor: "#00000028",
+		alignSelf: "stretch",
+		...shorthands.borderRadius("1px"),
+		...shorthands.margin("1px"),
+	},
+
+});
+
+
+function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: BasicEvent<[MetronomeCore, ClickDescriptor]> }) {
+
+	const [taskTime, setTaskTime] = useState(0);
+	useEffect(() => {
+		const handler = (m: MetronomeCore) => {
+			// rounding here is an optimization: don't have to rerender too often
+			setTaskTime(Math.round(m.totalElapsedSeconds));
+		};
+		clickEvent.add(handler);
+		return () => clickEvent.remove(handler);
+	}, [clickEvent]);
+
+	useLayoutEffect(() => {
+		setTaskTime(0);
+	}, [task]);
+
+	const classes = useTaskStatusStyles();
+
+
+	if (!task) return null;
+
+	const bpmChanges = task.metronomeTask.parts.some(p => p.bpm !== task.baseBpm);
+	const multipart = task.metronomeTask.parts.length > 1;
+
+	if (!bpmChanges && !multipart) {
+		return null;
+	} else {
+		return <div className={classes.root}>
+			{ bpmChanges && (<>
+				<div className={classes.taskHeader}>
+					<Text size={400} >Task: {task.baseBpm} bpm</Text>
+				</div>
+				<div className={classes.border} />
+			</>)}
+			<div>
+				<Text size={400}>{formatTime(taskTime)}</Text>
+			</div>
+			<div className={classes.border} />
+		</div>
 	}
 }

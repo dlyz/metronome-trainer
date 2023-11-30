@@ -67,6 +67,7 @@ export function createMetronomeTaskPart(params: ExerciseToMetronomeTaskParams, p
 }
 
 
+type TaskPartT = MetronomeTaskPartDuration & { name?: string };
 
 export function parseExerciseMetronomeTask(
 	settings: ExerciseSettings,
@@ -81,7 +82,7 @@ export function parseExerciseMetronomeTask(
 		bpmFormula: undefined,
 	};
 
-	const defaultDuration: MetronomeTaskPartDuration[] = [{ units: "seconds", value: 60 }];
+	const defaultDuration: TaskPartT[] = [{ units: "seconds", value: 60 }];
 
 	const partsFromRoot = parseTaskPart(settings, defaultPart, defaultDuration);
 	// assert partsFromRoot.length > 0
@@ -121,7 +122,7 @@ export function parseExerciseMetronomeTask(
 	function parseTaskPart(
 		settings: ExercisePartSettings,
 		fallbackPart: Omit<ExerciseMetronomeTaskPart, "duration">,
-		fallbackDuration: MetronomeTaskPartDuration[]
+		fallbackDuration: TaskPartT[]
 	): ExerciseMetronomeTaskPart[] {
 
 		let duration = parseT(settings.t);
@@ -129,10 +130,21 @@ export function parseExerciseMetronomeTask(
 			duration = fallbackDuration;
 		}
 
-		const name = settings.name || fallbackPart.name;
+		const baseName = settings.name || fallbackPart.name;
+
+		function createName(tName: string | undefined, tIndex: number) {
+			if (!baseName) return tName;
+			else if (!tName) {
+				if (!baseName) return undefined;
+				if (duration!.length === 1) return baseName;
+				return baseName + " " + (tIndex+1);
+			} else {
+				return baseName + " " + tName;
+			}
+		}
 
 		return duration.map((d, i) => ({
-			name: duration!.length === 1 ? name : name ? (name + " " + (i+1)) : undefined,
+			name: createName(d.name, i),
 			signature: parseBar(settings.bar) ?? fallbackPart.signature,
 			beatDivider: parseDiv(settings.div) ?? fallbackPart.beatDivider,
 			beatAccents: parseAccents(settings.accents) ?? fallbackPart.beatAccents,
@@ -231,7 +243,7 @@ export function parseExerciseMetronomeTask(
 		}
 	}
 
-	function parseT(t: ExercisePartSettings["t"]): MetronomeTaskPartDuration[] | undefined {
+	function parseT(t: ExercisePartSettings["t"]): TaskPartT[] | undefined {
 
 		if (t === undefined) return undefined;
 
@@ -250,11 +262,19 @@ export function parseExerciseMetronomeTask(
 		}
 
 		const chunks = t.split(',');
-		const result: MetronomeTaskPartDuration[] = [];
+		const result: TaskPartT[] = [];
 
 		for (const chunk of chunks) {
 
 			let str = chunk.trim();
+			if (!str) continue;
+
+			let name;
+			const nameSeparatorIndex = str.lastIndexOf('/');
+			if (nameSeparatorIndex !== -1) {
+				name = str.substring(0, nameSeparatorIndex).trim() || undefined;
+				str = str.substring(nameSeparatorIndex + 1).trim();
+			}
 
 			let secondsMul;
 			if (str.endsWith('s') || str.endsWith('S')) {
@@ -279,7 +299,7 @@ export function parseExerciseMetronomeTask(
 				units = "measures";
 			}
 
-			result.push({ units, value });
+			result.push({ units, value, name });
 		}
 
 		return result;
