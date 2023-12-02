@@ -51,7 +51,7 @@ export function parseExerciseSettings(
 	//console.log(settings);
 
 	const metronomeTask = parseExerciseMetronomeTask(settings, appendError);
-	const bpmTableSpec = parseBpmTableSpec(settings.bpms, error => appendError?.("BPM table spec: " + error))
+	const bpmTableSpec = parseBpmTableSpec(settings.bpms, error => appendError?.("bpms: " + error))
 
 	return { metronomeTask, bpmTableSpec };
 }

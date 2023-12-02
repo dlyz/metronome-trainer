@@ -1,3 +1,4 @@
+import { bpmLimits, checkBpmValue, checkInt } from "./validation";
 
 export interface ExerciseBpmTable {
 	refill(spec: BpmTableSpec): Promise<void>;
@@ -40,6 +41,7 @@ export function generateItemsBySpec(spec: BpmTableSpec) {
 	return items;
 }
 
+
 export function parseBpmTableSpec(
 	spec: string | undefined,
 	appendError?: (error: string) => void
@@ -49,6 +51,7 @@ export function parseBpmTableSpec(
 	if (typeof spec !== 'string') {
 		return fail(`string expected as a BPM table specification, but got ${typeof spec}`);
 	}
+
 
 	const instructions = spec.split(',').map(v => v.trim());
 	const groups: BpmTableChunkGroupSpec[] = [];
@@ -64,12 +67,14 @@ export function parseBpmTableSpec(
 
 			const itemsPerPageStr = instruction.substring(1);
 			const itemsPerPage = Number.parseFloat(instruction.substring(1));
-			if (!isNaturalNumber(itemsPerPage)) {
-				appendError?.(`items per page should be a positive integer, but got ${itemsPerPageStr}`);
+			if (!checkInt(itemsPerPage, 1, 1000000)) {
+				appendError?.(`items per page should be an integer [1, 1000000], but got ${itemsPerPageStr}`);
 			} else {
 				currentGroup.itemsPerPage = itemsPerPage;
 			}
 		} else {
+
+
 			let chunks = instruction.split('/');
 			const len1 = chunks.length;
 			if (len1 > 2) {
@@ -84,16 +89,16 @@ export function parseBpmTableSpec(
 			}
 
 			const from = Number.parseFloat(chunks[0]);
-			if (!isNaturalNumber(from)) {
-				return fail(`lower bound expected to be a natural number in instruction '${instruction}'`);
+			if (!checkBpmValue(from)) {
+				return fail(`lower bound expected to be a number [${bpmLimits.min}, ${bpmLimits.max}] in instruction '${instruction}'`);
 			}
 
 			let to = from;
 			if (len2 - len1 === 1) {
 				to = Number.parseFloat(chunks[1]);
 
-				if (!isNaturalNumber(to)) {
-					return fail(`upper bound expected to be a natural number in instruction '${instruction}'`);
+				if (!checkBpmValue(to)) {
+					return fail(`upper bound expected to be a number [${bpmLimits.min}, ${bpmLimits.max}] in instruction '${instruction}'`);
 				}
 
 				if (to < from) {
@@ -105,8 +110,8 @@ export function parseBpmTableSpec(
 			if (len1 === 2) {
 				step = Number.parseFloat(chunks[len2 - 1]);
 
-				if (!isNaturalNumber(step)) {
-					return fail(`step expected to be a natural number in instruction '${instruction}'`);
+				if (!checkBpmValue(step)) {
+					return fail(`step expected to be a number [${bpmLimits.min}, ${bpmLimits.max}] in instruction '${instruction}'`);
 				}
 			}
 
@@ -123,10 +128,6 @@ export function parseBpmTableSpec(
 
 			currentGroup.chunks.push(lastChunk);
 		}
-	}
-
-	function isNaturalNumber(val: number) {
-		return Number.isSafeInteger(val) && val > 0;
 	}
 
 	function prepareForGroupPropChange() {
@@ -146,4 +147,5 @@ export function parseBpmTableSpec(
 		appendError?.(cause);
 		return undefined;
 	}
+
 }

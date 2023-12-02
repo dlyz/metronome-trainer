@@ -1,5 +1,6 @@
 import type { MetronomeOptions, MetronomeTask, MetronomeTaskPart, MetronomeTaskPartDuration } from "../metronome";
 import type { ExercisePartSettings, ExerciseSettings } from "./Exercise";
+import { checkFloat, checkInt, checkBpmValue, bpmLimits, roundFinalBpm, coerceBpm } from "./validation";
 
 
 export interface ExerciseTask {
@@ -34,18 +35,57 @@ export interface ExerciseToMetronomeTaskParams {
 	baseBpm: number,
 }
 
-export function createMetronomeTask(params: ExerciseToMetronomeTaskParams, task: ExerciseMetronomeTask): MetronomeTask {
+export function createExerciseTask(
+	params: { baseBpm: number, sourceMetronomeTask: ExerciseMetronomeTask },
+	appendError?: (error: string) => void
+): ExerciseTask {
+	let baseBpm: number;
+	if (!checkBpmValue(params.baseBpm)) {
+		appendError?.(`task base bpm ${params.baseBpm} is invalid: expected number [${bpmLimits.min}, ${bpmLimits.max}]`);
+		baseBpm = bpmLimits.default;
+	} else {
+		baseBpm = roundFinalBpm(params.baseBpm);
+	}
+
 	return {
-		parts: task.parts.map(p => createMetronomeTaskPart(params, p)),
+		baseBpm,
+		sourceMetronomeTask: params.sourceMetronomeTask,
+		metronomeTask: createMetronomeTask({ baseBpm }, params.sourceMetronomeTask, appendError),
+	}
+}
+
+export function createMetronomeTask(
+	params: ExerciseToMetronomeTaskParams,
+	task: ExerciseMetronomeTask,
+	appendError?: (error: string) => void
+): MetronomeTask {
+	return {
+		parts: task.parts.map((p, i) => createMetronomeTaskPart(i, params, p, appendError)),
 	};
 }
 
 
-export function createMetronomeTaskPart(params: ExerciseToMetronomeTaskParams, part: ExerciseMetronomeTaskPart): MetronomeTaskPart {
+export function createMetronomeTaskPart(
+	index: number,
+	params: ExerciseToMetronomeTaskParams,
+	part: ExerciseMetronomeTaskPart,
+	appendError?: (error: string) => void
+): MetronomeTaskPart {
 
 	return { ...part, bpm: getBpm(params.baseBpm, part.bpmFormula) };
 
 	function getBpm(baseBpm: number, f: BpmFormula | undefined): number {
+		const bpm = getRawBpm(baseBpm, f);
+		if (!checkBpmValue(bpm)) {
+			const coercedBpm = coerceBpm(bpm);
+			appendError?.(`evaluated task part ${index + 1} bpm ${bpm} is invalid and will be replaced with ${coercedBpm}: expected number [${bpmLimits.min}, ${bpmLimits.max}]`);
+			return coercedBpm;
+		} else {
+			return roundFinalBpm(bpm);
+		}
+	}
+
+	function getRawBpm(baseBpm: number, f: BpmFormula | undefined): number {
 
 		if (!f) {
 			return baseBpm;
@@ -143,13 +183,18 @@ export function parseExerciseMetronomeTask(
 			}
 		}
 
-		return duration.map((d, i) => ({
-			name: createName(d.name, i),
+		const proto: ExerciseMetronomeTaskPart = {
 			signature: parseBar(settings.bar) ?? fallbackPart.signature,
 			beatDivider: parseDiv(settings.div) ?? fallbackPart.beatDivider,
 			beatAccents: parseAccents(settings.accents) ?? fallbackPart.beatAccents,
 			bpm: fallbackPart.bpm,
 			bpmFormula: parseBpm(settings.bpm) ?? fallbackPart.bpmFormula,
+			duration: undefined!,
+		}
+
+		return duration.map((d, i) => ({
+			...proto,
+			name: createName(d.name, i),
 			duration: d,
 		}));
 	}
@@ -163,15 +208,17 @@ export function parseExerciseMetronomeTask(
 
 		if (barParts.length !== 2) return fail();
 
-		const num = Number.parseInt(barParts[0], 10);
-		const denum = Number.parseInt(barParts[1], 10);
+		const num = Number.parseFloat(barParts[0]);
+		const denum = Number.parseFloat(barParts[1]);
 
-		if (Number.isNaN(num) || Number.isNaN(denum) || num < 1 || denum < 1) return fail();
+		const maxValue = 128;
+
+		if (!checkInt(num, 1, maxValue) || !checkInt(denum, 1, maxValue)) return fail();
 
 		return [num, denum];
 
 		function fail() {
-			appendError?.(`invalid bar time signature: ${bar}, expected {numerator}/{denominator} with positive integers`);
+			appendError?.(`bar: ${bar}: invalid time signature, expected '{numerator}/{denominator}' with integers [1-${maxValue}]`);
 			return undefined;
 		}
 	}
@@ -180,26 +227,31 @@ export function parseExerciseMetronomeTask(
 		if (div === undefined) return undefined;
 		else if (typeof div !== 'number') return fail();
 
-		if (Number.isNaN(div) || !Number.isSafeInteger(div) || div < 1) return fail();
+		const maxValue = 128;
+		if (!checkInt(div, 1, maxValue)) return fail();
 
 		return div;
 
 		function fail() {
-			appendError?.(`invalid beat divider: ${div}, expected positive integer`);
+			appendError?.(`div: ${div}: invalid beat divider, expected integer [1-${maxValue}]`);
 			return undefined;
 		}
 	}
-
 
 	function parseAccents(accents: number[] | undefined) {
 
 		if (accents === undefined) return undefined;
 		else if (!Array.isArray(accents)) return fail();
+		for (const value of accents) {
+			if (!checkInt(value, 0, 3)) {
+				return fail();
+			}
+		}
 
 		return accents as Partial<Record<number, 0 | 1 | 2 | 3>>;
 
 		function fail() {
-			appendError?.(`invalid accents array: ${accents}, expected array of integers`);
+			appendError?.(`accents: ${accents?.join(", ")}: invalid accents array, expected array of integers [0-3]`);
 			return undefined;
 		}
 
@@ -209,7 +261,14 @@ export function parseExerciseMetronomeTask(
 
 		if (bpm === undefined) return undefined;
 
+
+
 		if (typeof bpm === "number") {
+
+			if (!checkBpmValue(bpm)) {
+				return fail();
+			}
+
 			return { type: "=", value: bpm };
 		}
 
@@ -221,7 +280,7 @@ export function parseExerciseMetronomeTask(
 		const op = bpm[0];
 		const value = Number.parseFloat(bpm.substring(1));
 
-		if (Number.isNaN(value)) {
+		if (!checkBpmValue(value)) {
 			return fail();
 		}
 
@@ -238,7 +297,7 @@ export function parseExerciseMetronomeTask(
 		}
 
 		function fail() {
-			appendError?.(`invalid bpm formula: ${bpm}, expected constant number or string containing the operator character following by a number`);
+			appendError?.(`bpm: ${bpm}: invalid bpm formula, expected constant number or string containing the operator character '+-*/=' following by a number [${bpmLimits.min}, ${bpmLimits.max}]`);
 			return undefined;
 		}
 	}
@@ -247,9 +306,11 @@ export function parseExerciseMetronomeTask(
 
 		if (t === undefined) return undefined;
 
+		const maxValue = 10800;
+
 		if (typeof t === "number") {
 
-			if (Number.isNaN(t) || t <= 0) {
+			if (!checkInt(t, 1, maxValue)) {
 				return fail(t);
 			}
 
@@ -287,15 +348,15 @@ export function parseExerciseMetronomeTask(
 
 
 			let value = Number.parseFloat(str);
-			if (Number.isNaN(value) || value <= 0) {
-				return fail(chunk);
-			}
 
 			let units: MetronomeTaskPartDuration["units"];
 			if (secondsMul !== undefined) {
+				if (!checkFloat(value, 0, maxValue, true)) return fail(chunk);
 				value *= secondsMul;
+				if (!checkFloat(value, 0, maxValue, true)) return fail(chunk);
 				units = "seconds";
 			} else {
+				if (!checkInt(value, 1, maxValue)) return fail(chunk);
 				units = "measures";
 			}
 
@@ -305,10 +366,11 @@ export function parseExerciseMetronomeTask(
 		return result;
 
 		function fail(t: any) {
-			appendError?.(`invalid duration time: ${t}, expected number of measures or {seconds}s or {minutes}m`);
+			appendError?.(`t: ${t}: invalid duration time, expected number of measures or {seconds}s or {minutes}m in range (0, ${maxValue}] measures/seconds`);
 			return undefined;
 		}
 	}
+
 
 }
 

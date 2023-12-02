@@ -70,9 +70,10 @@ export class NotionBpmDatabase implements ExerciseBpmTable {
 
 function getBpm(item: DatabaseItem) {
 	const bpmProp = item.properties["nBPM"];
-	if (bpmProp && bpmProp.type === "formula" && 'type' in bpmProp.formula && bpmProp.formula.type === "number") {
-		return bpmProp.formula.number ?? undefined;
+	if (bpmProp && bpmProp.type === "formula" && 'type' in bpmProp.formula && bpmProp.formula.type === "number" && typeof bpmProp.formula.number === 'number') {
+		return bpmProp.formula.number;
 	}
+	return undefined;
 }
 
 export class NotionBpmDatabaseItem {

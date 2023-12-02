@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useLayoutEffect, useReducer, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react";
 import { Metronome, MetronomeState, formatTime } from "./Metronome";
-import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands, Text, tokens, mergeClasses } from "@fluentui/react-components";
+import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands, Text, tokens, mergeClasses, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem } from "@fluentui/react-components";
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
-import { ArrowCircleUpFilled, ArrowSyncFilled, DocumentSyncRegular, NextFilled, TableSimpleIncludeRegular } from "@fluentui/react-icons";
+import { ArrowCircleUpFilled, ArrowSyncFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
 import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
 import { BasicEvent, EventControl } from "../Event";
 import { useInitializedRef } from "./reactHelpers";
@@ -20,6 +20,7 @@ const useStyles = makeStyles({
 	},
 	buttonPanel: {
 		display: "flex",
+		alignItems: "center",
 		columnGap: "4px",
 		...shorthands.margin("4px"),
 	},
@@ -30,6 +31,16 @@ const useStyles = makeStyles({
 		// 	...shorthands.margin(0, "10px"),
 		// }
 	},
+	errorsIcon: {
+		color: tokens.colorPaletteYellowForeground1,
+		...shorthands.padding("6px"),
+		width: "32px",
+		height: "32px",
+	},
+	errorsTooltip: {
+		whiteSpace: "pre-wrap",
+		maxWidth: "400px",
+	}
 
 });
 
@@ -83,14 +94,23 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 
 	useLayoutEffect(() => {
 		const handler = () => {
-			dispatch({ type: "pageUpdated", task: exercise.currentTask, hasNextExercise: page.contentScriptApi?.hasNextExercise });
+			dispatch({
+				type: "pageUpdated",
+				task: exercise.currentTask,
+				hasNextExercise: page.contentScriptApi?.hasNextExercise,
+				exerciseErrors: exercise.errors,
+			});
 		}
 		page.onChanged.add(handler);
-		dispatch({ type: "pageUpdated", task: exercise.currentTask, hasNextExercise: page.contentScriptApi?.hasNextExercise });
+		handler();
 		return () => page.onChanged.remove(handler);
 	}, [page, exercise]);
 
 	const styles = useStyles();
+	const [refillDatabaseDialogOpened, setRefillDatabaseDialogOpened] = useState(false);
+	const toggleRefillDatabaseDialog = useCallback(() => setRefillDatabaseDialogOpened(v => !v), []);
+	const openRefillDatabaseDialog = useCallback(() => setRefillDatabaseDialogOpened(true), []);
+	const errorsContent = useMemo(() => state.exerciseErrors?.join('\n'), [state.exerciseErrors]);
 
 	const buttons = (
 		<div className={styles.buttonPanel}>
@@ -107,11 +127,20 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 				</Tooltip>
 			)}
 
-			<div className={styles.buttonPanelSpace + " qqq"}>
+			<div className={styles.buttonPanelSpace}>
 				<TaskStatus clickEvent={clickEvent} task={currentTask} />
 			</div>
 
-			{!!isLoading && <><Spinner size="tiny" /><div/></> }
+			{!!isLoading && <><Spinner size="tiny" /><div /></>}
+
+			{ state.exerciseErrors && (
+				<Tooltip content={{ children: errorsContent, className: styles.errorsTooltip }} relationship="description" withArrow>
+					<div className={styles.errorsIcon}>
+						<Warning20Filled />
+					</div>
+				</Tooltip>
+			)}
+
 
 			{state.currentTaskState !== MetronomeState.Finished && hasNextExercise && (
 				<Tooltip content="To next exercise" relationship="description">
@@ -123,42 +152,49 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 				<Button onClick={onUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
 			</Tooltip>
 
-			<Tooltip content="Update exercise" relationship="description">
-				<Button onClick={onUpdateExerciseClick} disabled={!!isLoading} icon={<DocumentSyncRegular />} appearance="subtle" />
-			</Tooltip>
-			{exercise.bpmTable && exercise.bpmTableSpec && (
-				<Dialog>
-					<DialogTrigger disableButtonEnhancement>
-						<Tooltip content="Refill BPM Table" relationship="description">
-							<Button disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} appearance="subtle" />
-						</Tooltip>
-					</DialogTrigger>
-					<DialogSurface>
-						<DialogBody>
-							<DialogTitle>Refill BPM Table</DialogTitle>
-							<DialogContent>
-								This action will refill BPM table according to BPMs specification in exercise properties.
-								It will delete rows that are not included in the specification.
-							</DialogContent>
-							<DialogActions>
-								<DialogTrigger disableButtonEnhancement>
-									<Button appearance="secondary">Close</Button>
-								</DialogTrigger>
-								<DialogTrigger disableButtonEnhancement>
-									<Button appearance="primary" onClick={onRefillDatabase}>I understand, refill</Button>
-								</DialogTrigger>
-							</DialogActions>
-						</DialogBody>
-					</DialogSurface>
-				</Dialog>
+			<Menu>
+				<MenuTrigger disableButtonEnhancement>
+					<Tooltip content="More" relationship="description">
+						<Button icon={<SettingsFilled />} appearance="subtle" />
+					</Tooltip>
+				</MenuTrigger>
 
-			)}
+				<MenuPopover>
+					<MenuList>
+						<MenuItem disabled={!!isLoading} icon={<DocumentSyncRegular />} onClick={onUpdateExerciseClick}>Update exercise</MenuItem>
+
+						{exercise.bpmTable && exercise.bpmTableSpec && (
+							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={openRefillDatabaseDialog}>Refill BPM Table</MenuItem>
+						)}
+					</MenuList>
+				</MenuPopover>
+			</Menu>
+
+			<Dialog open={refillDatabaseDialogOpened} onOpenChange={toggleRefillDatabaseDialog}>
+				<DialogSurface>
+					<DialogBody>
+						<DialogTitle>Refill BPM Table</DialogTitle>
+						<DialogContent>
+							This action will refill BPM table according to BPMs specification in exercise properties.
+							It will delete rows that are not included in the specification.
+						</DialogContent>
+						<DialogActions>
+							<DialogTrigger disableButtonEnhancement>
+								<Button appearance="secondary">Close</Button>
+							</DialogTrigger>
+							<DialogTrigger disableButtonEnhancement>
+								<Button appearance="primary" onClick={onRefillDatabase}>I understand, refill</Button>
+							</DialogTrigger>
+						</DialogActions>
+					</DialogBody>
+				</DialogSurface>
+			</Dialog>
 		</div>
 	);
 
 	return (
 		<div className={styles.root}>
-			{ currentTask ? buttons : (
+			{currentTask ? buttons : (
 				<Card>
 					{buttons}
 				</Card>
@@ -194,6 +230,7 @@ interface State {
 	newTask?: ExerciseTask,
 	currentTaskState: MetronomeState,
 	hasNextExercise?: boolean,
+	exerciseErrors?: string[],
 }
 
 type Action = never
@@ -204,6 +241,7 @@ type Action = never
 		type: "pageUpdated",
 		task?: ExerciseTask,
 		hasNextExercise: boolean | undefined,
+		exerciseErrors?: string[],
 	}
 	| {
 		type: "setCurrentTaskState",
@@ -235,18 +273,21 @@ function stateReducer(state: State, action: Action): State {
 					...state,
 					newTask: undefined,
 					hasNextExercise: action.hasNextExercise,
+					exerciseErrors: action.exerciseErrors,
 				};
 			}
 			else if (state.currentTaskState === MetronomeState.Stopped) {
-				return  {
+				return {
 					...setCurrentTask(action.task),
 					hasNextExercise: action.hasNextExercise,
+					exerciseErrors: action.exerciseErrors,
 				};
 			} else {
 				return {
 					...state,
 					newTask: action.task,
 					hasNextExercise: action.hasNextExercise,
+					exerciseErrors: action.exerciseErrors,
 				};
 			}
 		}
@@ -327,7 +368,7 @@ function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: Bas
 		return null;
 	} else {
 		return <div className={classes.root}>
-			{ bpmChanges && (<>
+			{bpmChanges && (<>
 				<div className={classes.taskHeader}>
 					<Text size={400} >Task: {task.baseBpm} bpm</Text>
 				</div>

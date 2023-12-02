@@ -10,7 +10,7 @@ import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
 import { Exercise, ExerciseSettings, parseExerciseSettings } from "../models/Exercise";
-import { ExerciseTask, createMetronomeTask } from "../models/ExerciseTask";
+import { ExerciseTask, createExerciseTask, createMetronomeTask } from "../models/ExerciseTask";
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
@@ -144,6 +144,7 @@ class NotionExercise implements Exercise {
 	bpmTableSpec?: BpmTableSpec;
 	bpmTable?: NotionBpmDatabase;
 	errors?: string[];
+	taskErrorsStart = 0;
 
 	async refreshTask(): Promise<void> {
 
@@ -193,13 +194,14 @@ class NotionExercise implements Exercise {
 			error => errors.push(error)
 		);
 
+		const taskErrorsStart = errors.length;
+
 		let task: ExerciseTask | undefined;
 		if (bpm !== undefined) {
-			task = {
+			task = createExerciseTask({
 				baseBpm: bpm,
-				sourceMetronomeTask: metronomeTask,
-				metronomeTask: createMetronomeTask({ baseBpm: bpm }, metronomeTask),
-			};
+				sourceMetronomeTask: metronomeTask
+			}, error => errors.push(error));
 		}
 
 		if (errors.length > 0) {
@@ -210,7 +212,8 @@ class NotionExercise implements Exercise {
 			// synchronous update section
 
 			this.bpmTableSpec = bpmTableSpec;
-			this.errors = errors;
+			this.errors = errors.length > 0 ? errors : undefined;
+			this.taskErrorsStart = taskErrorsStart;
 			this.bpmTable = bpmTable;
 
 			if (blockStructure) {
@@ -227,15 +230,14 @@ class NotionExercise implements Exercise {
 
 
 	#toNextBpm(currentTask: ExerciseTask, nextBpm: NotionBpmDatabaseItem, nextBpmValue: number) {
-		const task: ExerciseTask = {
+		const errors = this.errors?.slice(0, this.taskErrorsStart) ?? [];
+		const task: ExerciseTask = createExerciseTask({
 			...currentTask,
 			baseBpm: nextBpmValue,
-			metronomeTask: createMetronomeTask({ baseBpm: nextBpmValue }, currentTask.sourceMetronomeTask),
-		};
+		}, error => errors.push(error));
 
-		if (!_.isEqual(this.currentTask, task)) {
-			this.currentTask = task;
-		}
+		this.currentTask = task;
+		this.errors = errors.length > 0 ? errors : undefined;
 		this.currentTaskBpm = nextBpm;
 
 		this.onChanged.invoke();
