@@ -58,7 +58,7 @@ async function start() {
 
 
 	console.log("creating api");
-	const backend = await createChromeNotionMetronomeTrainer();
+	const { metronomeTrainer, tabUrlFilter } = await createChromeNotionMetronomeTrainer();
 
 	console.log("api created");
 
@@ -77,7 +77,7 @@ async function start() {
 
 		} else if (changeInfo.status === "loading" && !changeInfo.url) {
 
-			pageId = backend.getPageIdFromUrl(tab.url);
+			pageId = metronomeTrainer.getPageIdFromUrl(tab.url);
 			if (pageId) {
 				pageToRefresh = trackedPages.get(pageId);
 			}
@@ -90,7 +90,7 @@ async function start() {
 
 	});
 
-	const existingTabs = await chrome.tabs.query({ url: "https://www.notion.so/*" });
+	const existingTabs = await chrome.tabs.query({ url: tabUrlFilter });
 
 	for (const tab of existingTabs) {
 		if (tab.id && tab.url) {
@@ -119,7 +119,7 @@ async function start() {
 	function attachTabToPage(tabId: number, pageId: string) {
 		let page = trackedPages.get(pageId);
 		if (!page) {
-			page = new BackgroundExercisePage(backend.createPage(pageId));
+			page = new BackgroundExercisePage(metronomeTrainer.createPage(pageId));
 			trackedPages.set(pageId, page);
 			console.log(`page ${pageId} created`);
 		}
@@ -133,7 +133,7 @@ async function start() {
 	function updateTab(tabId: number, url: string): [boolean, string | undefined] {
 
 		let trackedTab = trackedTabs.get(tabId);
-		const pageId = backend.getPageIdFromUrl(url);
+		const pageId = metronomeTrainer.getPageIdFromUrl(url);
 
 		if (trackedTab) {
 

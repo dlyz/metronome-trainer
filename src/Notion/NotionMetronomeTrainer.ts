@@ -16,6 +16,7 @@ import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
 import { APIErrorCode, APIResponseError } from "@notionhq/client";
 import { NotionExerciseDto, NotionExercisePageDto } from "./NotionExercisePageDto";
+import { getNotionPageIdFromUrl, templateCatalogUrl } from "./notionUrl";
 
 
 
@@ -28,7 +29,7 @@ export class NotionMetronomeTrainer implements MetronomeTrainer {
 	}
 
 	getPageIdFromUrl(url: string | undefined) {
-		return NotionApi.getPageIdFromUrl(url);
+		return getNotionPageIdFromUrl(url);
 	}
 
 	createPage(pageId: string): ExercisePage {
@@ -465,6 +466,10 @@ t: 1m
 `.trim();
 
 	const instructions = `
+💡 You have chosen to create an exercise from scratch.
+Due to Notion API limitation this way requires a few manual steps for comfortable work (listed below).
+Consider instead duplicating one of the example exercise pages to your workspace from here: ${templateCatalogUrl}
+
 To the left is an exercise settings block, change them as you need.
 All fields are optional, but you probably want to keep exercise duration 't'.
 After changing 'bpms' you can also refill the BPM table using the button above metronome.

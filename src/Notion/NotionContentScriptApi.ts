@@ -1,5 +1,6 @@
 import { ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory, ExercisePageDto } from "../models/ExercisePage";
 import { NotionExercisePageDto } from "./NotionExercisePageDto";
+import { createNotionPageUrl } from "./notionUrl";
 
 
 export const notionContentScriptApiFactory: ExercisePageContentScriptApiFactory = (dto) => {
@@ -78,8 +79,10 @@ class NotionContentScriptApi implements ExercisePageContentScriptApi  {
 		}
 
 		function fallbackNavigate() {
-
-			window.location.href = `https://www.notion.so/${nextExercisePageId?.[0].replaceAll("-", "")}`;
+			const pageId = nextExercisePageId?.[0];
+			if (pageId) {
+				window.location.href = createNotionPageUrl(pageId);
+			}
 		}
 
 	}

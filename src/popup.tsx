@@ -2,20 +2,28 @@ import React, { useCallback, useEffect, useLayoutEffect, useState } from "react"
 import { createRoot } from "react-dom/client";
 import { renderApp } from "./components/App";
 import { ExercisePage } from "./models/ExercisePage";
-import { Button, Spinner, Text, makeStyles } from "@fluentui/react-components";
+import { Button, Spinner, Text, makeStyles, shorthands } from "@fluentui/react-components";
 import { startClient } from "./chromeTransport/client";
 import { ObservableValueControl } from "./Event";
 import { Exercise } from "./models/Exercise";
+import { templateCatalogUrl } from "./Notion/notionUrl";
 
 
 const useStyles = makeStyles({
 	root: {
-		minWidth: "200px",
+		minWidth: "250px",
 		minHeight: "100px",
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "center",
-	}
+	},
+	initButtonsRoot: {
+		display: "flex",
+		flexDirection: "column",
+		"& > button": {
+			...shorthands.margin("16px"),
+		}
+	},
 })
 
 // todo: migrate to background information for consistency. add page refresh button
@@ -80,6 +88,10 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 
 	}, [page]);
 
+	const onNavigateToTemplateCatalogClick = useCallback(() => {
+		window.open(templateCatalogUrl, "mozillaTab");
+	}, []);
+
 	const styles = useStyles();
 
 	return <div className={styles.root}>
@@ -110,7 +122,15 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 					</p>
 				</Text>);
 			} else {
-				return (<Button appearance="primary" onClick={onCreateExerciseClick}>Create exercise on current page</Button>);
+
+				return (<div className={styles.initButtonsRoot}>
+					<Button appearance="primary" onClick={onNavigateToTemplateCatalogClick}>
+						Start with duplicating one of the example exercise pages to your workspace (recommended)
+					</Button>
+					<Button appearance="outline" onClick={onCreateExerciseClick}>
+						Create exercise on current page from scratch
+					</Button>
+				</div>);
 			}
 
 		} else {

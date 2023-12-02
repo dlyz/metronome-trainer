@@ -20,30 +20,6 @@ export type DatabaseItem = PageObjectResponse | DatabaseObjectResponse;
 
 export class NotionApi {
 
-	static getPageIdFromUrl(url: string | undefined) {
-		// https://www.notion.so/1-28400ef2f94c47fdb3d54142b137ce9b
-		if (!url) return undefined;
-		if (!url.startsWith("https://www.notion.so/")) return undefined;
-
-		const parts = url.split('/');
-		if (parts.length !== 4) return undefined;
-		const pagePart = parts[3];
-		const idStart = pagePart.lastIndexOf('-');
-
-		if (idStart === -1) return undefined;
-
-		let idEnd = pagePart.indexOf('?');
-		if (idEnd === -1) {
-			idEnd = pagePart.indexOf('#');
-		}
-
-		if (idEnd === -1) {
-			idEnd = pagePart.length;
-		}
-
-		return pagePart.substring(idStart + 1, idEnd);
-	}
-
 	#client: Client = undefined!;
 
 	get client() { return this.#client; }
