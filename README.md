@@ -7,7 +7,7 @@ Use BPM table to keep track of completed tasks.
 
 See instructions to get started [here](https://www.notion.so/dlyz/Metronome-Trainer-252692a4825c4e9eac41538ae74fcfb2).
 
-![example notion page](./example-notion-page.jpg)
+![example notion page](./screenshots/example-notion-page.jpg)
 
 ## Build
 
