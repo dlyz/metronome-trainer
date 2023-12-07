@@ -16,7 +16,7 @@ import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
 import { APIErrorCode, APIResponseError } from "@notionhq/client";
 import { NotionExerciseDto, NotionExercisePageDto } from "./NotionExercisePageDto";
-import { getNotionPageIdFromUrl, templateCatalogUrl } from "./notionUrl";
+import { getNotionPageIdFromUrl, projectHomepageUrl } from "./notionUrl";
 
 
 
@@ -468,7 +468,7 @@ t: 1m
 	const instructions = `
 💡 You have chosen to create an exercise from scratch.
 Due to Notion API limitation this way requires a few manual steps for comfortable work (listed below).
-Consider instead duplicating one of the example exercise pages to your workspace from here: ${templateCatalogUrl}
+Consider instead duplicating one of the example exercise pages to your workspace from here: ${projectHomepageUrl}
 
 To the left is an exercise settings block, change them as you need.
 All fields are optional, but you probably want to keep exercise duration 't'.

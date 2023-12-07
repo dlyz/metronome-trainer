@@ -6,7 +6,7 @@ import { Button, Spinner, Text, makeStyles, shorthands } from "@fluentui/react-c
 import { startClient } from "./chromeTransport/client";
 import { ObservableValueControl } from "./Event";
 import { Exercise } from "./models/Exercise";
-import { templateCatalogUrl } from "./Notion/notionUrl";
+import { projectHomepageUrl } from "./Notion/notionUrl";
 
 
 const useStyles = makeStyles({
@@ -88,8 +88,8 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 
 	}, [page]);
 
-	const onNavigateToTemplateCatalogClick = useCallback(() => {
-		window.open(templateCatalogUrl, "mozillaTab");
+	const onNavigateToProjectHomePageClick = useCallback(() => {
+		window.open(projectHomepageUrl, "mozillaTab");
 	}, []);
 
 	const styles = useStyles();
@@ -99,6 +99,13 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 	</div>
 
 	function createContent() {
+
+		const gotoHomepage = <p>
+			To start using Metronome Trainer go to
+			the <a target="_blank" rel="noopener noreferrer" href={projectHomepageUrl}>project home page</a> for a
+			getting started guide.
+		</p>
+
 		if (isLoading || (page && hasAccess === undefined)) {
 			return (<Spinner />);
 
@@ -120,11 +127,12 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 					<p>
 						Check Notion page connections and Notion integration token in <a href="javascript:void(0)" onClick={onOpenOptionsClick}>extension options page</a>.
 					</p>
+					{ gotoHomepage }
 				</Text>);
 			} else {
 
 				return (<div className={styles.initButtonsRoot}>
-					<Button appearance="primary" onClick={onNavigateToTemplateCatalogClick}>
+					<Button appearance="primary" onClick={onNavigateToProjectHomePageClick}>
 						Start with duplicating one of the example exercise pages to your workspace (recommended)
 					</Button>
 					<Button appearance="outline" onClick={onCreateExerciseClick}>
@@ -134,7 +142,10 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 			}
 
 		} else {
-			return (<Text>Current page is not a Notion page.</Text>);
+			return (<Text>
+				<p>Current page is not a Notion page.</p>
+				{ gotoHomepage }
+			</Text>);
 		}
 	}
 };

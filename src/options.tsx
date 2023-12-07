@@ -2,6 +2,7 @@ import { Input, Label, makeStyles, shorthands, useId } from "@fluentui/react-com
 import { createRoot } from "react-dom/client";
 import React, { useCallback, useEffect, useState } from "react";
 import { renderApp } from "./components/App";
+import { projectHomepageUrl } from "./Notion/notionUrl";
 
 
 const useClasses = makeStyles({
@@ -48,6 +49,8 @@ const Options = () => {
 
   return (
       <div className={classes.root}>
+        <a target="_blank" rel="noopener noreferrer" href={projectHomepageUrl}>Metronome Trainer Home Page</a>
+        <div />
         <Label htmlFor={inputId}>Notion token:</Label>
         <Input id={inputId} type="password" value={notionToken} onChange={e => updateToken(e.target.value)} />
       </div>

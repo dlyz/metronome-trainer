@@ -38,4 +38,4 @@ export function createNotionPageUrl(pageId: string) {
 
 export const notionTabUrlFilter = "https://www.notion.so/*";
 
-export const templateCatalogUrl = "https://www.notion.so/dlyz/Metronome-Trainer-252692a4825c4e9eac41538ae74fcfb2";
+export const projectHomepageUrl = "https://dlyz.notion.site/dlyz/Metronome-Trainer-252692a4825c4e9eac41538ae74fcfb2";

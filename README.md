@@ -1,11 +1,15 @@
 # Metronome trainer
 
-Chromium-compatible extension (also tested on Android in Yandex browser).
+[Chromium-compatible extension](https://chromewebstore.google.com/detail/metronome-trainer/pehahlcmhbjencfnfanhbfocokgcknip)
+(also tested on Android in Yandex browser).
 Helps drummers and other musicians to exercise and track progress in Notion pages.
-Use metronome to practice a task with current BPM.
-Use BPM table to keep track of completed tasks.
+Notion Pages allows you to describe the exercise the way you want
+by adding text, images, embedded videos and other content.
+The extension automates exercise progress tracking and provides customizable metronome for your workouts.
+Use metronome to practice a task with current BPM. Use BPM table to keep track of completed tasks.
 
-See instructions to get started [here](https://www.notion.so/dlyz/Metronome-Trainer-252692a4825c4e9eac41538ae74fcfb2).
+See more info and getting started guide at the
+[project home page](https://dlyz.notion.site/dlyz/Metronome-Trainer-252692a4825c4e9eac41538ae74fcfb2).
 
 ![example notion page](./screenshots/example-notion-page.jpg)
 
