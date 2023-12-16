@@ -1,11 +1,14 @@
-import React, { useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import { startClient } from "./chromeTransport/client";
 import { Root, createRoot } from "react-dom/client";
 import { renderApp } from "./components/App";
 import { ExercisePage } from "./models/ExercisePage";
-import { ExercisePageView } from "./components/ExercisePageView";
 import { ObservableValue, ObservableValueControl } from "./Event";
+import { ExercisePageView } from "./components/ExercisePageView";
 import { notionContentScriptApiFactory } from "./Notion/NotionContentScriptApi";
+import { createChromeComponentSettingsStorage } from "./chromeTransport/ChromeComponentSettingsStorage";
+import { ComponentSettingsStorage } from "./components/storage";
+import { CachedPromise, cachePromiseResult } from "./Promise";
 
 async function start() {
 
@@ -48,22 +51,28 @@ async function start() {
 					container.id = "metronome-trainer-container";
 					container.style.zIndex = "1000";
 					container.style.position = "absolute";
-					container.style.bottom = "6px";
-					container.style.right = "6px";
+					container.style.bottom = "0";
+					container.style.width = "100%";
+					container.style.pointerEvents = "none";
 					document.body.appendChild(container);
 				}
 
 				if (!reactRoot) {
 					console.log("metronome trainer: rendering popup");
 					reactRoot = createRoot(container);
-					renderApp(reactRoot, <Popup observablePage={observablePage} />, { transparent: true, });
+					renderApp(
+						reactRoot,
+						<Popup observablePage={observablePage} settingsPromise={settingsPromise} />,
+						{ transparent: true, }
+					);
 				}
 			}
 		}
 	});
 
+	const settingsPromise = cachePromiseResult(createChromeComponentSettingsStorage());
 
-	await startClient({
+	const clientPromise = startClient({
 		onNewExercisePage: (p) => {
 			observablePage.setValue(p);
 		},
@@ -71,13 +80,18 @@ async function start() {
 		keepAlive: true,
 	});
 
+	await Promise.all([settingsPromise, clientPromise]);
+
 	console.log("metronome trainer initialized");
 
 }
 
 start();
 
-function Popup({ observablePage }: { observablePage: ObservableValue<ExercisePage | undefined> }) {
+function Popup({ observablePage, settingsPromise }: {
+	observablePage: ObservableValue<ExercisePage | undefined>
+	settingsPromise: CachedPromise<ComponentSettingsStorage>,
+}) {
 
 	const [page, setPage] = useState<ExercisePage>();
 	useLayoutEffect(() => {
@@ -89,7 +103,14 @@ function Popup({ observablePage }: { observablePage: ObservableValue<ExercisePag
 		return () => observablePage.remove(handler);
 	}, [observablePage]);
 
+	const [settingsStorage, setSettingsStorage] = useState(settingsPromise.hasResult ? settingsPromise.result : undefined);
+	useEffect(() => {
+		(async function() {
+			setSettingsStorage(await settingsPromise.promise);
+		})();
+	}, [settingsPromise]);
+
 	return <div>
-		{ page && (<ExercisePageView page={page} />) }
+		{ page && settingsStorage && (<ExercisePageView page={page} settingsStorage={settingsStorage} />) }
 	</div>;
 }

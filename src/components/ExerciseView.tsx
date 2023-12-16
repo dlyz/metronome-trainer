@@ -4,7 +4,7 @@ import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogS
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
-import { ArrowCircleUpFilled, ArrowSyncFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
+import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
 import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
 import { BasicEvent, EventControl } from "../Event";
 import { useInitializedRef } from "./reactHelpers";
@@ -12,6 +12,7 @@ import { useInitializedRef } from "./reactHelpers";
 export interface ExerciseViewProps {
 	page: ExercisePage,
 	exercise: Exercise,
+	onHideMetronomeTrainer: () => void,
 };
 
 
@@ -44,7 +45,7 @@ const useStyles = makeStyles({
 
 });
 
-export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseViewProps) {
+export const ExerciseView = React.memo(function ({ page, exercise, onHideMetronomeTrainer }: ExerciseViewProps) {
 
 
 	const { clickEventInvoker, clickEvent } = useInitializedRef(() => {
@@ -169,6 +170,11 @@ export const ExerciseView = React.memo(function ({ page, exercise }: ExerciseVie
 					</MenuList>
 				</MenuPopover>
 			</Menu>
+
+			<Tooltip content="Hide Metronome Trainer" relationship="description">
+				<Button onClick={onHideMetronomeTrainer} icon={<ChevronCircleDownFilled />} appearance="subtle" />
+			</Tooltip>
+
 
 			<Dialog open={refillDatabaseDialogOpened} onOpenChange={toggleRefillDatabaseDialog}>
 				<DialogSurface>

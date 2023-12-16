@@ -24,7 +24,7 @@ export enum MetronomeState {
 const useClasses = makeStyles({
 	card: {
 		height: "88px",
-		width: "410px",
+		width: "100%",
 		paddingTop: 0,
 		paddingBottom: 0,
 	},

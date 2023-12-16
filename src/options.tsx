@@ -9,6 +9,7 @@ const useClasses = makeStyles({
   root: {
     display: "flex",
     flexDirection: "column",
+    maxWidth: "400px",
     // Use 2px gap below the label (per the design system)
     ...shorthands.gap("2px"),
   },
