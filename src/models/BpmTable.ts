@@ -1,7 +1,7 @@
 import { bpmLimits, checkBpmValue, checkInt } from "./validation";
 
 export interface ExerciseBpmTable {
-	refill(spec: BpmTableSpec): Promise<void>;
+	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }): Promise<void>;
 
 	exportDto(): ExerciseBpmTableDto;
 }
@@ -43,11 +43,15 @@ export function generateItemsBySpec(spec: BpmTableSpec) {
 
 
 export function parseBpmTableSpec(
-	spec: string | undefined,
+	spec: string | number | undefined,
 	appendError?: (error: string) => void
 ): BpmTableSpec | undefined {
 
 	if (spec === undefined) return undefined;
+
+	if (typeof spec === 'number') {
+		spec = "" + spec;
+	}
 	if (typeof spec !== 'string') {
 		return fail(`string expected as a BPM table specification, but got ${typeof spec}`);
 	}

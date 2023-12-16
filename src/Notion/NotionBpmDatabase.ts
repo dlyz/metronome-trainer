@@ -62,8 +62,8 @@ export class NotionBpmDatabase implements ExerciseBpmTable {
 		this.#cachedRawEmptyItems = response ?? [];
 	}
 
-	refill(spec: BpmTableSpec) {
-		return refillDatabase(this.api, this.#database.id, this.#database.properties, spec);
+	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }) {
+		return refillDatabase(this.api, this.#database.id, this.#database.properties, spec, options);
 	}
 
 }
@@ -72,6 +72,14 @@ function getBpm(item: DatabaseItem) {
 	const bpmProp = item.properties["nBPM"];
 	if (bpmProp && bpmProp.type === "formula" && 'type' in bpmProp.formula && bpmProp.formula.type === "number" && typeof bpmProp.formula.number === 'number') {
 		return bpmProp.formula.number;
+	}
+	return undefined;
+}
+
+function getDate(item: DatabaseItem) {
+	const bpmProp = item.properties["Date"];
+	if (bpmProp && bpmProp.type === "date") {
+		return bpmProp.date?.start;
 	}
 	return undefined;
 }
@@ -106,37 +114,60 @@ export class NotionBpmDatabaseItem {
 }
 
 
-export async function refillDatabase(api: NotionApi, databaseId: string, databaseProperties: DatabaseObjectResponse["properties"], spec: BpmTableSpec) {
+export async function refillDatabase(
+	api: NotionApi,
+	databaseId: string,
+	databaseProperties: DatabaseObjectResponse["properties"],
+	spec: BpmTableSpec,
+	options?: { removeExcessCompleted?: boolean }
+) {
 
 	console.log(`refilling db ${databaseId} with`, spec);
 
 	const existingItems = await getAllPages(api.queryDatabase({
 		database_id: databaseId,
-		sorts: [{ property: "nBPM", direction: "ascending" }],
+		sorts: [{ property: "nBPM", direction: "ascending" }, { property: "Date", direction: "ascending" }],
 	}));
 
-	const existingItemsMap = new Map(existingItems.map(i => [getBpm(i), i] as const).filter(i => i[0] !== undefined));
-
+	const existingItemsMap = new Map<number | undefined, DatabaseItem[]>();
+	for (const item of existingItems) {
+		const bpm = getBpm(item);
+		let list = existingItemsMap.get(bpm);
+		if (!list) {
+			list = [];
+			existingItemsMap.set(bpm, list);
+		}
+		list.push(item);
+	}
 	const newItems = generateItemsBySpec(spec);
 
 	const toAdd = [];
 
 	for (const item of newItems) {
 		const existing = existingItemsMap.get(item);
-		if (existing) {
-			existingItemsMap.delete(item);
+		if (existing?.length) {
+			existing.shift();
 		} else {
 			toAdd.push(item);
 		}
 	}
 
+	const toRemove = [];
+
+	for (const item of existingItemsMap) {
+		if (options?.removeExcessCompleted) {
+			toRemove.push(...item[1]);
+		} else {
+			toRemove.push(...item[1].filter(i => !getDate(i)));
+		}
+	}
 
 	const titleProp = Object.entries(databaseProperties).find(p => p[1].type === "title")?.[1];
 	if (titleProp?.type !== 'title') {
 		throw new Error(`title property not found in the database ${databaseId}`);
 	}
 
-	console.log('adding', toAdd, 'removing', [...existingItemsMap.keys()]);
+	console.log('adding', toAdd, 'removing', toRemove.map(i => getBpm(i)));
 
 	const addPromises = [];
 
@@ -162,7 +193,7 @@ export async function refillDatabase(api: NotionApi, databaseId: string, databas
 
 	const removePromises = [];
 
-	for (const item of existingItemsMap.values()) {
+	for (const item of toRemove) {
 		removePromises.push(api.client.blocks.delete({
 			block_id: item.id,
 		}));

@@ -4,7 +4,7 @@ import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogS
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
-import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
+import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
 import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
 import { BasicEvent, EventControl } from "../Event";
 import { useInitializedRef } from "./reactHelpers";
@@ -60,15 +60,18 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	const { currentTask, hasNextExercise } = state;
 	const [isLoading, setIsLoading] = useState(0);
 
-	const onRefillDatabase = useCallback(async () => {
+	async function refillDatabase(removeExcessCompleted: boolean) {
 		await doAsyncCommand(() => page.refreshPage());
 		if (!page.exercise) return;
 		const { bpmTable, bpmTableSpec } = page.exercise;
 		if (bpmTable && bpmTableSpec) {
-			await doAsyncCommand(() => bpmTable.refill(bpmTableSpec));
+			await doAsyncCommand(() => bpmTable.refill(bpmTableSpec, { removeExcessCompleted }));
 			await doAsyncCommand(() => exercise.refreshTask());
 		}
-	}, [page]);
+	}
+
+	const onRefillDatabaseSoft = useCallback(() => refillDatabase(false), [page]);
+	const onRefillDatabaseHard = useCallback(() => refillDatabase(true), [page]);
 
 	const onUpdateExerciseClick = useCallback(() => {
 		doAsyncCommand(() => page.refreshPage());
@@ -165,7 +168,11 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 						<MenuItem disabled={!!isLoading} icon={<DocumentSyncRegular />} onClick={onUpdateExerciseClick}>Update exercise</MenuItem>
 
 						{exercise.bpmTable && exercise.bpmTableSpec && (
-							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={openRefillDatabaseDialog}>Refill BPM Table</MenuItem>
+							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={onRefillDatabaseSoft}>Refill BPM Table</MenuItem>
+						)}
+
+						{exercise.bpmTable && exercise.bpmTableSpec && (
+							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeFilled />} onClick={openRefillDatabaseDialog}>Refill BPM Table (include completed)</MenuItem>
 						)}
 					</MenuList>
 				</MenuPopover>
@@ -182,14 +189,14 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 						<DialogTitle>Refill BPM Table</DialogTitle>
 						<DialogContent>
 							This action will refill BPM table according to BPMs specification in exercise properties.
-							It will delete rows that are not included in the specification.
+							It will delete rows that are not included in the specification even for completed tasks.
 						</DialogContent>
 						<DialogActions>
 							<DialogTrigger disableButtonEnhancement>
 								<Button appearance="secondary">Close</Button>
 							</DialogTrigger>
 							<DialogTrigger disableButtonEnhancement>
-								<Button appearance="primary" onClick={onRefillDatabase}>I understand, refill</Button>
+								<Button appearance="primary" onClick={onRefillDatabaseHard}>I understand, refill</Button>
 							</DialogTrigger>
 						</DialogActions>
 					</DialogBody>

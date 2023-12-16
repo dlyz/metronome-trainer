@@ -36,7 +36,7 @@ export interface ExercisePartSettings {
 }
 
 export interface ExerciseSettings extends ExercisePartSettings {
-	bpms?: string,
+	bpms?: string | number,
 	parts?: ExercisePartSettings[],
 }
 

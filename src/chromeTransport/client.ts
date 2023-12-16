@@ -193,12 +193,12 @@ class ProxyBpmTable implements ExerciseBpmTable {
 		this.dto = dto;
 	}
 
-	refill(spec: BpmTableSpec): Promise<void> {
+	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean; }): Promise<void> {
 		return this.client.sendRequest<InvokeAsyncMethodRequest<ExerciseBpmTable, "refill">>({
 			type: "invokeAsyncMethod",
 			target: "bpmTable",
 			method: "refill",
-			arguments: [spec],
+			arguments: [spec, options],
 		});
 	}
 }
