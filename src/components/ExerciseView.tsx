@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react";
 import { Metronome, MetronomeState, formatTime } from "./Metronome";
-import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands, Text, tokens, mergeClasses, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem } from "@fluentui/react-components";
+import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands, Text, tokens, mergeClasses, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, Popover, PopoverTrigger, PopoverSurface } from "@fluentui/react-components";
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
 import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
-import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
+import type { ClickDescriptor, Metronome as MetronomeCore, MetronomeTask } from "../metronome";
 import { BasicEvent, EventControl } from "../Event";
 import { useInitializedRef } from "./reactHelpers";
 
@@ -38,9 +38,11 @@ const useStyles = makeStyles({
 		width: "32px",
 		height: "32px",
 	},
+	errorsButton: {
+		color: tokens.colorPaletteYellowForeground1,
+	},
 	errorsTooltip: {
 		whiteSpace: "pre-wrap",
-		maxWidth: "400px",
 	}
 
 });
@@ -138,11 +140,18 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 			{!!isLoading && <><Spinner size="tiny" /><div /></>}
 
 			{ state.exerciseErrors && (
-				<Tooltip content={{ children: errorsContent, className: styles.errorsTooltip }} relationship="description" withArrow>
-					<div className={styles.errorsIcon}>
-						<Warning20Filled />
-					</div>
-				</Tooltip>
+				<Popover>
+					<PopoverTrigger disableButtonEnhancement>
+						<Tooltip relationship="description" content="Show exercise errors">
+							<Button icon={<Warning20Filled />} appearance="subtle" className={styles.errorsButton} />
+						</Tooltip>
+					</PopoverTrigger>
+					<PopoverSurface>
+						<div className={styles.errorsTooltip}>
+							{errorsContent}
+						</div>
+					</PopoverSurface>
+				</Popover>
 			)}
 
 

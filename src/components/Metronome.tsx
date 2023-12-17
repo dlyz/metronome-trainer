@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import { ClickDescriptor, ClickEventHandler, Metronome as MetronomeCore, MetronomeOptions, MetronomeTask } from "../metronome";
-import { Button, Card, GriffelStyle, Text, makeStyles, mergeClasses, shorthands, tokens } from "@fluentui/react-components";
+import { Button, Card, GriffelStyle, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, makeStyles, mergeClasses, shorthands, tokens } from "@fluentui/react-components";
 import { ArrowResetFilled, PauseFilled, PlayFilled, StopFilled } from "@fluentui/react-icons";
 import { BasicEvent, EventControl } from "../Event";
 import { useInitializedRef } from "./reactHelpers";
@@ -219,7 +219,12 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 			</>
 		) : (
 			<div className={classes.hRoot}>
-				<BpmDisplay options={part} />
+				<TaskDescriptionTooltip task={task}>
+					<div>
+						<BpmDisplay options={part} />
+					</div>
+				</TaskDescriptionTooltip>
+
 				<div>
 					{playPauseButton}
 				</div>
@@ -308,8 +313,7 @@ const useElapsedViewClasses = makeStyles({
 		alignSelf: "stretch",
 		...shorthands.borderRadius("1px"),
 		...shorthands.margin("1px"),
-	}
-
+	},
 });
 
 type PositionState = {
@@ -373,12 +377,13 @@ const ElapsedView = React.memo(function ({ clickEvent, task }: {
 	return <div className={classes.root}>
 		{task.parts.length > 1 && (
 		<>
-			<div className={classes.part}>
-				<Text size={400} weight="semibold">
-					{partText}
-				</Text>
-			</div>
-
+			<TaskDescriptionTooltip task={task}>
+				<div className={classes.part}>
+					<Text size={400} weight="semibold">
+						{partText}
+					</Text>
+				</div>
+			</TaskDescriptionTooltip>
 			<div className={classes.border} />
 		</>
 		)}
@@ -493,6 +498,88 @@ const ClickView = React.memo(function ({ clickEvent, options }: {
 
 	return <div className={classes.root}>
 		{children}
-		{/* <Text size={400}>B: {state.beatIndex}/{beatsCount}, N: {state.noteIndex}/{options.beatDivider}, A: {state.accent}</Text> */}
 	</div>
 });
+
+
+const useTaskDescriptionTooltipClasses = makeStyles({
+	tooltip: {
+		maxWidth: "600px",
+	}
+});
+
+
+const TaskDescriptionTooltip = React.memo(function ({task, children}: { task: MetronomeTask, children: React.ReactElement}) {
+
+	const classes = useTaskDescriptionTooltipClasses();
+
+	return <Tooltip content={{ children: (<TaskDescription task={task} />), className: classes.tooltip}}
+		relationship="description"
+		withArrow
+		showDelay={750}
+	>
+		{children}
+	</Tooltip>
+});
+
+const TaskDescription = React.memo(function ({task}: {task: MetronomeTask}) {
+
+	const showNames = task.parts.some(p => !!p.name);
+	return <Table size="extra-small" style={{ width: "auto" }}>
+		<TableHeader>
+			<TableRow>
+				<TableHeaderCell>#</TableHeaderCell>
+				{ showNames && (<TableHeaderCell>name</TableHeaderCell> )}
+				<TableHeaderCell>t-sig</TableHeaderCell>
+				<TableHeaderCell>bpm</TableHeaderCell>
+				<TableHeaderCell>dur</TableHeaderCell>
+				<TableHeaderCell>click</TableHeaderCell>
+				<TableHeaderCell>accents</TableHeaderCell>
+			</TableRow>
+		</TableHeader>
+		<TableBody>
+
+			{task.parts.map((p, i) => (
+				<TableRow>
+					<TableCell>{i + 1}</TableCell>
+					{ showNames && (<TableCell>{p.name ?? ""}</TableCell> )}
+					<TableCell>{p.signature[0]}/{p.signature[1]}</TableCell>
+					<TableCell>{p.bpm}</TableCell>
+					<TableCell>{p.duration.units === "measures" ? `${p.duration.value} bars` : formatTime(p.duration.value)}</TableCell>
+					<TableCell>1/{p.signature[1]*p.beatDivider}</TableCell>
+					<TableCell>{Array(p.signature[0]).fill(0).map((_, i) => <AccentItem key={i} value={(p.beatAccents[i] ?? 1)} />)}</TableCell>
+				</TableRow>
+			))}
+		</TableBody>
+	</Table>
+});
+
+const useAccentItemClasses = makeStyles({
+	wrapper: {
+		height: "100%",
+		display: "inline-block",
+		...shorthands.padding("4px", 0),
+	},
+	item: {
+		width: "8px",
+		backgroundColor: tokens.colorNeutralForeground1,
+		opacity: 0.6,
+		display: "inline-block",
+	}
+});
+
+function AccentItem({value} : {value: number}) {
+	const classes = useAccentItemClasses();
+	return <div className={classes.wrapper} >
+		<span className={classes.item} style={{ height: getHeight(value) }} />
+	</div>
+
+	function getHeight(value: number) {
+		switch(value) {
+			case 0: return '0';
+			case 1: return '25%';
+			case 2: return '65%';
+			default: return '100%';
+		}
+	}
+}
