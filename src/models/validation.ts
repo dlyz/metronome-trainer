@@ -4,6 +4,12 @@ export function checkInt(value: number, min: number, max: number) {
 	return Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
+export function coerceInt(value: number, min: number, max: number, def: number) {
+	if (Number.isNaN(value)) return def;
+	return Math.max(min, Math.min(max, value));
+}
+
+
 export function checkFloat(value: number, min: number, max: number, minStrict: boolean = false, maxStrict: boolean = false) {
 	return typeof value === 'number' && !Number.isNaN(value) && (minStrict ? (value > min) : (value >= min)) && (maxStrict ? (value < max) : (value <= max));
 }

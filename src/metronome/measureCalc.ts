@@ -15,7 +15,7 @@ export interface MetronomeMeasureConfig {
 
 
 export function getMeasureConfig(options: MetronomeOptions): MetronomeMeasureConfig {
-	const { signature, bpm, beatDivider } = options;
+	const { timeSignature: signature, bpm, beatDivider } = options;
 
 	const beatsCount = signature[0];
 	const bps = bpm / 60;

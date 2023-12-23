@@ -268,7 +268,7 @@ function BpmDisplay({ options }: { options: MetronomeOptions }) {
 			<Text size={300}> bpm</Text>
 		</div>
 		<div>
-			<Text size={400} align="center">{options.signature[0]}/{options.signature[1]}</Text>
+			<Text size={400} align="center">{options.timeSignature[0]}/{options.timeSignature[1]}</Text>
 		</div>
 	</div>
 }
@@ -474,7 +474,7 @@ const ClickView = React.memo(function ({ clickEvent, options }: {
 		return () => clickEvent.remove(handler);
 	}, []);
 
-	const beatsCount = options.signature[0];
+	const beatsCount = options.timeSignature[0];
 
 	const maxWidth = 85 / beatsCount;
 	const children = [];
@@ -540,14 +540,14 @@ const TaskDescription = React.memo(function ({task}: {task: MetronomeTask}) {
 		<TableBody>
 
 			{task.parts.map((p, i) => (
-				<TableRow>
+				<TableRow key={i}>
 					<TableCell>{i + 1}</TableCell>
 					{ showNames && (<TableCell>{p.name ?? ""}</TableCell> )}
-					<TableCell>{p.signature[0]}/{p.signature[1]}</TableCell>
+					<TableCell>{p.timeSignature[0]}/{p.timeSignature[1]}</TableCell>
 					<TableCell>{p.bpm}</TableCell>
 					<TableCell>{p.duration.units === "measures" ? `${p.duration.value} bars` : formatTime(p.duration.value)}</TableCell>
-					<TableCell>1/{p.signature[1]*p.beatDivider}</TableCell>
-					<TableCell>{Array(p.signature[0]).fill(0).map((_, i) => <AccentItem key={i} value={(p.beatAccents[i] ?? 1)} />)}</TableCell>
+					<TableCell>1/{p.timeSignature[1]*p.beatDivider}</TableCell>
+					<TableCell>{Array(p.timeSignature[0]).fill(0).map((_, i) => <AccentItem key={i} value={(p.beatAccents[i] ?? 1)} />)}</TableCell>
 				</TableRow>
 			))}
 		</TableBody>

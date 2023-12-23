@@ -31,7 +31,7 @@ export interface ExercisePartSettings {
 	bar?: string,
 	t?: string | number,
 	div?: number,
-	accents?: number[],
+	accents?: number[] | string,
 	bpm?: string | number,
 }
 

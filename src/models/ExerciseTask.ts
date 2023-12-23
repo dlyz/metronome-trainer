@@ -1,4 +1,4 @@
-import type { MetronomeOptions, MetronomeTask, MetronomeTaskPart, MetronomeTaskPartDuration } from "../metronome";
+import type { BeatAccentsMap, MetronomeOptions, MetronomeTask, MetronomeTaskPart, MetronomeTaskPartDuration } from "../metronome";
 import type { ExercisePartSettings, ExerciseSettings } from "./Exercise";
 import { checkFloat, checkInt, checkBpmValue, bpmLimits, roundFinalBpm, coerceBpm } from "./validation";
 
@@ -107,30 +107,63 @@ export function createMetronomeTaskPart(
 }
 
 
-type TaskPartT = MetronomeTaskPartDuration & { name?: string };
+const beatAccentsPresets = [
+	"first",
+	"middle"
+] as const;
+
+export type BeatAccentsPreset = typeof beatAccentsPresets[number];
+
+export function isBeatAccentsPreset(preset: string | undefined): preset is BeatAccentsPreset {
+	return beatAccentsPresets.indexOf(preset?.toLowerCase() as BeatAccentsPreset) !== -1;
+}
+
+export function resolveBeatAccentsMap(preset: BeatAccentsPreset | BeatAccentsMap, measureTimeSignature: [number, number]): BeatAccentsMap {
+	if (typeof preset !== 'string') return preset;
+	const normalPreset = preset.toLowerCase() as BeatAccentsPreset;
+	switch(normalPreset) {
+		case "first": return {
+			0: 3,
+		};
+		case "middle": return (measureTimeSignature[0] % 2 === 0) ? {
+			0: 3,
+			[measureTimeSignature[0]/2]: 2,
+		} : {
+			0: 3,
+		};
+		default:
+			const exhaustiveCheck: never = normalPreset;
+			throw new Error(`BeatAccentsMap preset ${preset} is not supported`);
+	}
+}
+
+type PartPrototypeDuration = MetronomeTaskPartDuration & { name?: string };
+type PartPrototype = Omit<ExerciseMetronomeTaskPart, "duration" | "beatAccents"> & {
+	baseName?: string,
+	beatAccents: BeatAccentsMap | BeatAccentsPreset,
+	duration: PartPrototypeDuration[],
+}
 
 export function parseExerciseMetronomeTask(
 	settings: ExerciseSettings,
 	appendError?: (error: string) => void
 ): ExerciseMetronomeTask {
 
-	const defaultPart: Omit<ExerciseMetronomeTaskPart, "duration"> = {
+	const defaultProto: PartPrototype = {
 		bpm: 0,
-		signature: [4, 4],
-		beatAccents: { 0: 3 },
+		timeSignature: [4, 4],
+		beatAccents: "middle",
 		beatDivider: 1,
 		bpmFormula: undefined,
+		duration: [{ units: "seconds", value: 60 }],
 	};
 
-	const defaultDuration: TaskPartT[] = [{ units: "seconds", value: 60 }];
 
-	const partsFromRoot = parseTaskPart(settings, defaultPart, defaultDuration);
+	const rootProto = parseTaskPart(settings, defaultProto);
 	// assert partsFromRoot.length > 0
 
 	if (settings.parts) {
 		if (Array.isArray(settings.parts) && settings.parts.length > 0) {
-			const fallbackPart = partsFromRoot[0];
-			const fallbackDuration = partsFromRoot.map(p => p.duration);
 			const parts = settings.parts
 				.flatMap(p => {
 					if (p == undefined) {
@@ -139,13 +172,13 @@ export function parseExerciseMetronomeTask(
 						appendError?.(`item of 'parts' should be an object, but got ${typeof p}.`);
 						return [];
 					} else {
-						return parseTaskPart(p, fallbackPart, fallbackDuration);
+						return parseTaskPart(p, rootProto);
 					}
 				})
 			;
 
 			if (parts.length !== 0) {
-				return { parts };
+				return { parts: parts.flatMap(instantiatePartPrototype) };
 			} else {
 				appendError?.("could not find any 'parts'");
 			}
@@ -156,22 +189,35 @@ export function parseExerciseMetronomeTask(
 	}
 
 	return {
-		parts: partsFromRoot,
+		parts: instantiatePartPrototype(rootProto),
 	};
 
 	function parseTaskPart(
 		settings: ExercisePartSettings,
-		fallbackPart: Omit<ExerciseMetronomeTaskPart, "duration">,
-		fallbackDuration: TaskPartT[]
-	): ExerciseMetronomeTaskPart[] {
+		fallbackPart: PartPrototype,
+	): PartPrototype {
 
 		let duration = parseT(settings.t);
 		if (!duration || duration.length === 0) {
-			duration = fallbackDuration;
+			duration = fallbackPart.duration;
 		}
 
-		const baseName = settings.name || fallbackPart.name;
+		const timeSignature = parseBar(settings.bar) ?? fallbackPart.timeSignature;
 
+		return {
+			baseName: settings.name || fallbackPart.name,
+			timeSignature,
+			beatDivider: parseDiv(settings.div) ?? fallbackPart.beatDivider,
+			beatAccents: parseAccents(settings.accents, timeSignature) ?? fallbackPart.beatAccents,
+			bpm: fallbackPart.bpm,
+			bpmFormula: parseBpm(settings.bpm) ?? fallbackPart.bpmFormula,
+			duration,
+		}
+	}
+
+	function instantiatePartPrototype(proto: PartPrototype): ExerciseMetronomeTaskPart[] {
+
+		const { baseName, duration } = proto;
 		function createName(tName: string | undefined, tIndex: number) {
 			if (!baseName) return tName;
 			else if (!tName) {
@@ -183,19 +229,11 @@ export function parseExerciseMetronomeTask(
 			}
 		}
 
-		const proto: ExerciseMetronomeTaskPart = {
-			signature: parseBar(settings.bar) ?? fallbackPart.signature,
-			beatDivider: parseDiv(settings.div) ?? fallbackPart.beatDivider,
-			beatAccents: parseAccents(settings.accents) ?? fallbackPart.beatAccents,
-			bpm: fallbackPart.bpm,
-			bpmFormula: parseBpm(settings.bpm) ?? fallbackPart.bpmFormula,
-			duration: undefined!,
-		}
-
 		return duration.map((d, i) => ({
 			...proto,
 			name: createName(d.name, i),
 			duration: d,
+			beatAccents: resolveBeatAccentsMap(proto.beatAccents, proto.timeSignature)
 		}));
 	}
 
@@ -238,20 +276,34 @@ export function parseExerciseMetronomeTask(
 		}
 	}
 
-	function parseAccents(accents: number[] | undefined) {
+	function parseAccents(accents: number[] | string | undefined, measureTimeSignature: [number, number]) {
 
-		if (accents === undefined) return undefined;
-		else if (!Array.isArray(accents)) return fail();
+		if (accents === undefined) {
+			return undefined;
+		} else if (typeof accents === 'string') {
+			const preset = accents.trim();
+			if (!preset.length) return undefined;
+			if (!isBeatAccentsPreset(preset)) return fail();
+			return preset;
+		} else if (!Array.isArray(accents)) {
+			return fail();
+		}
+
 		for (const value of accents) {
 			if (!checkInt(value, 0, 3)) {
-				return fail();
+				return failArray(accents);
 			}
 		}
 
-		return accents as Partial<Record<number, 0 | 1 | 2 | 3>>;
+		return accents as BeatAccentsMap;
+
+		function failArray(accents: number[]) {
+			appendError?.(`accents: [${accents?.join(", ")}]: invalid accents array, expected array of integers [0-3] or a valid preset name`);
+			return undefined;
+		}
 
 		function fail() {
-			appendError?.(`accents: ${accents?.join(", ")}: invalid accents array, expected array of integers [0-3]`);
+			appendError?.(`accents: ${accents}: invalid accents array, expected array of integers [0-3] or a valid preset name`);
 			return undefined;
 		}
 
@@ -302,7 +354,7 @@ export function parseExerciseMetronomeTask(
 		}
 	}
 
-	function parseT(t: ExercisePartSettings["t"]): TaskPartT[] | undefined {
+	function parseT(t: ExercisePartSettings["t"]): PartPrototypeDuration[] | undefined {
 
 		if (t === undefined) return undefined;
 
@@ -323,7 +375,7 @@ export function parseExerciseMetronomeTask(
 		}
 
 		const chunks = t.split(',');
-		const result: TaskPartT[] = [];
+		const result: PartPrototypeDuration[] = [];
 
 		for (const chunk of chunks) {
 

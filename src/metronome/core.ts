@@ -7,10 +7,10 @@ export interface MetronomeOptions {
 	 * Measure time signature
 	 * @default [4, 4]
 	 */
-	signature: [number, number],
+	timeSignature: [number, number],
 
 	/**
-	 * Beats per minute for notes of length 1/(denominator of the {@link signature})
+	 * Beats per minute for notes of length 1/(denominator of the {@link timeSignature})
 	 * @default 60
 	 */
 	bpm: number,
@@ -55,7 +55,7 @@ export interface MetronomeTaskPartDuration {
 function getFullOptions(options: Partial<MetronomeOptions> | undefined): MetronomeOptions {
 	return {
 		bpm: 60,
-		signature: [4, 4],
+		timeSignature: [4, 4],
 		beatAccents: { 0: 3 },
 		beatDivider: 1,
 		..._.omitBy(options, _.isUndefined),

@@ -381,7 +381,7 @@ function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: Bas
 	const classes = useTaskStatusStyles();
 
 
-	if (!task) return null;
+	if (!task) return <Text size={400}>No incomplete tasks found</Text>;
 
 	const bpmChanges = task.metronomeTask.parts.some(p => p.bpm !== task.baseBpm);
 	const multipart = task.metronomeTask.parts.length > 1;
