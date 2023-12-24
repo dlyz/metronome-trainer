@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { renderApp } from "./components/App";
-import { ExercisePage } from "./models/ExercisePage";
+import { ExercisePage, ExercisePageAccessInfo } from "./models/ExercisePage";
 import { Button, Spinner, Text, makeStyles, shorthands } from "@fluentui/react-components";
 import { startClient } from "./chromeTransport/client";
 import { ObservableValueControl } from "./Event";
 import { Exercise } from "./models/Exercise";
 import { projectHomepageUrl } from "./Notion/notionUrl";
+import { renderFormattedText } from "./components/renderFormattedText";
 
 
 const useStyles = makeStyles({
@@ -26,10 +27,8 @@ const useStyles = makeStyles({
 	},
 })
 
-// todo: migrate to background information for consistency. add page refresh button
-
 interface PopupState {
-	hasAccess?: boolean,
+	accessInfo?: ExercisePageAccessInfo,
 	page?: ExercisePage,
 	exercise?: Exercise,
 }
@@ -43,7 +42,7 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 	function updateState() {
 		const page = observablePage.value;
 		setState({
-			hasAccess: page?.hasAccess,
+			accessInfo: page?.accessInfo,
 			page,
 			exercise: page?.exercise
 		});
@@ -55,7 +54,7 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 		return () => observablePage.remove(updateState);
 	}, [observablePage]);
 
-	const { page, exercise, hasAccess } = state;
+	const { page, exercise, accessInfo } = state;
 
 	useLayoutEffect(() => {
 		if (!page) return;
@@ -100,13 +99,17 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 
 	function createContent() {
 
+		function homepageLink(content: string) {
+			return <a target="_blank" rel="noopener noreferrer" href={projectHomepageUrl}>{content}</a>;
+		}
+
 		const gotoHomepage = <p>
 			To start using Metronome Trainer go to
-			the <a target="_blank" rel="noopener noreferrer" href={projectHomepageUrl}>project home page</a> for a
+			the {homepageLink("project homepage")} for a
 			getting started guide.
 		</p>
 
-		if (isLoading || (page && hasAccess === undefined)) {
+		if (isLoading || (page && accessInfo === undefined)) {
 			return (<Spinner />);
 
 		} else if (page) {
@@ -118,15 +121,26 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 					<p>
 						If there is nothing there, try to update the page.
 					</p>
+					<p>
+						{ homepageLink("Metronome Trainer homepage") }
+					</p>
 				</Text>);
-			} else if (!hasAccess) {
+			} else if (!accessInfo?.hasAccess) {
 				return (<Text>
 					<p>
-						The extension does not have access to current page {page.pageId}.
+						The extension does not have access to the current page ({page.pageId}).
 					</p>
-					<p>
-						Check Notion page connections and Notion integration token in <a href="javascript:void(0)" onClick={onOpenOptionsClick}>extension options page</a>.
-					</p>
+					{ accessInfo?.error && renderFormattedText(accessInfo.error, {
+						renderLink: (key, link) => {
+							if (link.link === "metrotrain://extension-options") {
+								return <a key={key} href="javascript:void(0)" onClick={onOpenOptionsClick}>
+									{link.text}
+								</a>
+							}
+
+							return undefined;
+						}
+					}) }
 					{ gotoHomepage }
 				</Text>);
 			} else {

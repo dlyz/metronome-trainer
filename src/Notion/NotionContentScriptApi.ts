@@ -30,7 +30,6 @@ class NotionContentScriptApi implements ExercisePageContentScriptApi  {
 		const { nextExercisePageId } = this.#dto;
 		if (!nextExercisePageId) return;
 
-		// todo: replace with abstraction, incapsulate notion specifics
 		for (let index = 0; index < nextExercisePageId.length; index++) {
 			const pageId = nextExercisePageId[index];
 			const link = findLink(pageId);

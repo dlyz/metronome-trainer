@@ -9,6 +9,7 @@ import { notionContentScriptApiFactory } from "./Notion/NotionContentScriptApi";
 import { createChromeComponentSettingsStorage } from "./chromeTransport/ChromeComponentSettingsStorage";
 import { ComponentSettingsStorage } from "./components/storage";
 import { CachedPromise, cachePromiseResult } from "./Promise";
+import { projectHomepageUrl } from "./Notion/notionUrl";
 
 async function start() {
 
@@ -111,6 +112,8 @@ function Popup({ observablePage, settingsPromise }: {
 	}, [settingsPromise]);
 
 	return <div>
-		{ page && settingsStorage && (<ExercisePageView page={page} settingsStorage={settingsStorage} />) }
+		{ page && settingsStorage && (
+			<ExercisePageView page={page} settingsStorage={settingsStorage} homepageUrl={projectHomepageUrl} />
+		)}
 	</div>;
 }

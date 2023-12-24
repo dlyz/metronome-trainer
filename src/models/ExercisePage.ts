@@ -1,12 +1,13 @@
 import { BasicEvent } from "../Event";
 import { Exercise, ExerciseDto } from "./Exercise";
+import { FormattedText } from "./FormattedText";
 
 
 export interface ExercisePage {
 
 	readonly pageId: string;
 
-	readonly hasAccess?: boolean;
+	readonly accessInfo?: ExercisePageAccessInfo;
 
 	readonly exercise?: Exercise;
 
@@ -19,6 +20,11 @@ export interface ExercisePage {
 	createExercise(): Promise<void>;
 
 	exportDto(): ExercisePageDto;
+}
+
+export interface ExercisePageAccessInfo {
+	hasAccess: boolean,
+	error?: FormattedText,
 }
 
 export interface ExercisePageContentScriptApi {
@@ -34,6 +40,9 @@ export interface ExercisePageDto {
 	type: "exercisePage";
 	pageId: string;
 	sourceType: string;
-	hasAccess?: boolean;
+	accessInfo?: ExercisePageAccessInfo;
 	exercise?: ExerciseDto;
 }
+
+
+

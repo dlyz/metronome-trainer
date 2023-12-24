@@ -36,7 +36,11 @@ const useStyles = makeStyles({
 
 
 
-export function ExercisePageView({ page, settingsStorage }: { page: ExercisePage, settingsStorage: ComponentSettingsStorage, }) {
+export function ExercisePageView({ page, settingsStorage, homepageUrl }: {
+	page: ExercisePage,
+	settingsStorage: ComponentSettingsStorage,
+	homepageUrl?: string,
+}) {
 
 	const [exercise, setExercise] = useState<Exercise>();
 	const styles =  useStyles();
@@ -66,7 +70,12 @@ export function ExercisePageView({ page, settingsStorage }: { page: ExercisePage
 	return <>
 		<div className={styles.wrapper} style={!visible && { display: "none" } || undefined}>
 			<div className={styles.root}>
-				<ExerciseView page={page} exercise={exercise} onHideMetronomeTrainer={onHideMetronomeTrainer} />
+				<ExerciseView
+					page={page}
+					exercise={exercise}
+					onHideMetronomeTrainer={onHideMetronomeTrainer}
+					homepageUrl={homepageUrl}
+				/>
 			</div>
 		</div>
 		{ !visible && (

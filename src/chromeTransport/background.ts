@@ -42,12 +42,17 @@ export function startServer(server: {
 					const page = server.getExercisePage(tabId);
 					if (page) {
 						const request = message;
+						// console.log("invokeAsyncMethod", request);
 						return runAsyncRequest(async () => {
 							const target =
 							request.target === "page" ? page :
 							request.target === "exercise" ? page.exercise :
 							request.target === "bpmTable" ? page.exercise?.bpmTable :
 							undefined;
+
+							if (!target) {
+								console.warn(`unknown or absent target ${request.target}`);
+							}
 
 							const promise = target && ((target as any)[request.method](...request.arguments) as Promise<void>);
 							await promise;

@@ -103,7 +103,7 @@ class ProxyExercisePage implements ExercisePage {
 	exportDto(): ExercisePageDto { return this.dto;	}
 
 	update(dto: ExercisePageDto) {
-		//copyUnchanged(["source"], this.dto, dto);
+		copyUnchanged(["accessInfo"], this.dto, dto);
 		this.dto = dto;
 		this.exercise = syncProxy(this.client, ProxyExercise, this.exercise, dto.exercise);
 		this.contentScriptApi?.update(dto);
@@ -112,7 +112,7 @@ class ProxyExercisePage implements ExercisePage {
 
 	get pageId() { return this.dto.pageId; }
 
-	get hasAccess() { return this.dto.hasAccess; }
+	get accessInfo() { return this.dto.accessInfo; }
 
 	exercise?: ProxyExercise;
 

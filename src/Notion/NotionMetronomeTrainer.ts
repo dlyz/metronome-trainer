@@ -3,20 +3,22 @@ import {
 	DatabaseObjectResponse,
 	NotionApi,
 	PageObjectResponse,
-	getAllPages
+	getAllPages,
+	isUnauthorized
 } from "./NotionApi";
 import jsYaml, { YAMLException } from "js-yaml";
 import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
-import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
+import { ExercisePage, ExercisePageAccessInfo, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
 import { Exercise, ExerciseSettings, parseExerciseSettings } from "../models/Exercise";
-import { ExerciseTask, createExerciseTask, createMetronomeTask } from "../models/ExerciseTask";
+import { ExerciseTask, createExerciseTask } from "../models/ExerciseTask";
 import _ from "lodash";
 import { EventControl } from "../Event";
 import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
-import { APIErrorCode, APIResponseError } from "@notionhq/client";
 import { NotionExerciseDto, NotionExercisePageDto } from "./NotionExercisePageDto";
 import { getNotionPageIdFromUrl, projectHomepageUrl } from "./notionUrl";
+import { isObjectNotFound } from "./NotionApi";
+import { FormattedText } from "../models/FormattedText";
 
 
 
@@ -24,6 +26,7 @@ export class NotionMetronomeTrainer implements MetronomeTrainer {
 
 	constructor(
 		readonly api: NotionApi,
+		readonly errorFactory: NotionFormattedErrorFactory,
 		readonly contentScriptApiFactory: ExercisePageContentScriptApiFactory | undefined,
 		) {
 	}
@@ -33,13 +36,18 @@ export class NotionMetronomeTrainer implements MetronomeTrainer {
 	}
 
 	createPage(pageId: string): ExercisePage {
-		return new NotionPage(this.api, this.contentScriptApiFactory, pageId);
+		return new NotionPage(this.api, this.errorFactory, this.contentScriptApiFactory, pageId);
 	}
 }
+
+export type NotionErrorType = "unknown" | "noToken" | "unauthorized" | "integrationNotConnected";
+export type NotionFormattedErrorFactory = (type: NotionErrorType, message: string) => FormattedText;
+
 
 class NotionPage implements ExercisePage {
 	constructor(
 		readonly api: NotionApi,
+		readonly errorFactory: NotionFormattedErrorFactory,
 		readonly contentScriptApiFactory: ExercisePageContentScriptApiFactory | undefined,
 		readonly pageId: string,
 	) {
@@ -51,7 +59,7 @@ class NotionPage implements ExercisePage {
 			type: "exercisePage",
 			pageId: this.pageId,
 			sourceType: "notion",
-			hasAccess: this.hasAccess,
+			accessInfo: this.accessInfo,
 			exercise: this.exercise?.exportDto(),
 			nextExercisePageId: this.#nextExercisePageId,
 		};
@@ -59,7 +67,7 @@ class NotionPage implements ExercisePage {
 
 	readonly onChanged = new EventControl();
 
-	hasAccess?: boolean;
+	accessInfo?: ExercisePageAccessInfo;
 
 	exercise?: NotionExercise;
 
@@ -72,32 +80,64 @@ class NotionPage implements ExercisePage {
 
 		console.log(`refreshing page ${this.pageId}`);
 
-		const blocks = await parsePage(this.api, this.pageId);
-		if (!blocks) {
-			this.hasAccess = false;
+		const completeWithNoAccess = (type: NotionErrorType, message: string) => {
 			this.exercise = undefined;
+			this.accessInfo = {
+				hasAccess: false,
+				error: this.errorFactory(type, message),
+			};
 
-			console.log(`has no access to the page ${this.pageId}`);
+			console.log(`no Notion page access (${type}): ` + message);
 			this.onChanged.invoke();
-			return;
 		}
 
-
-		const bpmTable = blocks.bpmDatabase ? new NotionBpmDatabase(this.api, blocks.bpmDatabase) : undefined;
+		if (!this.api.hasToken) {
+			return completeWithNoAccess(
+				"noToken",
+				"There is no Notion integration token provided."
+			);
+		}
 
 		let exercise;
-		if (!blocks.settingsBlock && !bpmTable) {
-			exercise = undefined;
-		} else {
-			exercise = this.exercise ?? new NotionExercise(this.api, this.onChanged, blocks);
-			await bpmTable?.updateEmptyItems();
+		try {
 
-			exercise.doUpdate(blocks, blocks.settingsBlock, bpmTable);
+			const blocks = await parsePage(this.api, this.pageId);
+			if (!blocks) {
+				return completeWithNoAccess(
+					"integrationNotConnected",
+					"It looks like that the Notion integration is not connected to the current page. Check Notion page connections."
+				);
+			}
+
+			const bpmTable = blocks.bpmDatabase ? new NotionBpmDatabase(this.api, blocks.bpmDatabase) : undefined;
+
+			if (!blocks.settingsBlock && !bpmTable) {
+				exercise = undefined;
+			} else {
+				exercise = this.exercise ?? new NotionExercise(this.api, this.onChanged, blocks);
+				await bpmTable?.updateEmptyItems();
+
+				exercise.doUpdate(blocks, blocks.settingsBlock, bpmTable);
+			}
+
+
+		} catch(ex) {
+			if (isUnauthorized(ex)) {
+				return completeWithNoAccess(
+					"unauthorized",
+					ex.message
+				);
+			} else {
+				completeWithNoAccess(
+					"unknown",
+					`Something went wrong: ${(ex as Error)?.message}.`
+				);
+				throw ex;
+			}
 		}
 
-		this.hasAccess = true;
+		this.accessInfo = { hasAccess: true };
 		this.exercise = exercise;
-
 		console.log(`page ${this.pageId} refreshed, broadcasting event`);
 		this.onChanged.invoke();
 
@@ -264,15 +304,17 @@ class NotionExercise implements Exercise {
 		}
 	}
 
-	refillDatabase(spec: BpmTableSpec): Promise<void> {
+	refillDatabase(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }): Promise<void> {
 		if (this.bpmTable) {
-			return this.bpmTable.refill(spec);
+			return this.bpmTable.refill(spec, options);
 		} else {
 			return this.#createAndFillDatabase(spec);
 		}
 	}
 
 	async #createAndFillDatabase(spec: BpmTableSpec): Promise<void> {
+		console.log("creating a database");
+
 		let parent = this.pageBlocks.pageId;
 		const settingsColumn = this.pageBlocks.settingsColumn;
 		if (settingsColumn) {
@@ -525,10 +567,6 @@ Recommended optional actions:
 			}
 		]
 	});
-}
-
-function isObjectNotFound(ex: unknown): ex is APIResponseError {
-	return ex instanceof APIResponseError && ex.code === APIErrorCode.ObjectNotFound;
 }
 
 async function findNextExercisePage(api: NotionApi, pageId: string) {

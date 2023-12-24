@@ -1,4 +1,4 @@
-import { Client } from "@notionhq/client";
+import { APIErrorCode, APIResponseError, Client } from "@notionhq/client";
 import type {
 	BlockObjectResponse,
 	DatabaseObjectResponse,
@@ -21,10 +21,14 @@ export type DatabaseItem = PageObjectResponse | DatabaseObjectResponse;
 export class NotionApi {
 
 	#client: Client = undefined!;
+	#hasToken = false;
 
 	get client() { return this.#client; }
 
+	get hasToken() { return this.#hasToken; }
+
 	updateClient(options: { token?: string }) {
+		this.#hasToken = !!options.token?.trim();
 		this.#client = new Client({ auth: options.token });
 	}
 
@@ -86,5 +90,16 @@ export interface ListResponse<T> {
 	"next_cursor": string | null;
 	"has_more": boolean;
 }
+
+
+export function isObjectNotFound(ex: unknown): ex is APIResponseError {
+	return ex instanceof APIResponseError && ex.code === APIErrorCode.ObjectNotFound;
+}
+
+export function isUnauthorized(ex: unknown): ex is APIResponseError {
+	return ex instanceof APIResponseError && ex.code === APIErrorCode.Unauthorized;
+}
+
+
 
 

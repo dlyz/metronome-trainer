@@ -4,7 +4,7 @@ import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogS
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
-import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, NextFilled, SettingsFilled, TableSimpleIncludeFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
+import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, InfoRegular, NextFilled, SettingsFilled, TableSimpleIncludeFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
 import type { ClickDescriptor, Metronome as MetronomeCore, MetronomeTask } from "../metronome";
 import { BasicEvent, EventControl } from "../Event";
 import { useInitializedRef } from "./reactHelpers";
@@ -13,6 +13,7 @@ export interface ExerciseViewProps {
 	page: ExercisePage,
 	exercise: Exercise,
 	onHideMetronomeTrainer: () => void,
+	homepageUrl?: string,
 };
 
 
@@ -47,7 +48,7 @@ const useStyles = makeStyles({
 
 });
 
-export const ExerciseView = React.memo(function ({ page, exercise, onHideMetronomeTrainer }: ExerciseViewProps) {
+export const ExerciseView = React.memo(function ({ page, exercise, onHideMetronomeTrainer, homepageUrl }: ExerciseViewProps) {
 
 
 	const { clickEventInvoker, clickEvent } = useInitializedRef(() => {
@@ -82,6 +83,10 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	const onUpdateTaskClick = useCallback(() => {
 		doAsyncCommand(() => exercise.refreshTask());
 	}, [exercise]);
+
+	const onHomepageClick = useCallback(() => {
+		window.open(homepageUrl, "mozillaTab");
+	}, [homepageUrl]);
 
 	const onMetronomeStateChanged = useCallback((state: MetronomeState) => {
 		dispatch({ type: "setCurrentTaskState", state });
@@ -174,14 +179,26 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 				<MenuPopover>
 					<MenuList>
-						<MenuItem disabled={!!isLoading} icon={<DocumentSyncRegular />} onClick={onUpdateExerciseClick}>Update exercise</MenuItem>
+						<MenuItem disabled={!!isLoading} icon={<DocumentSyncRegular />} onClick={onUpdateExerciseClick}>
+							Update exercise
+						</MenuItem>
 
 						{exercise.bpmTable && exercise.bpmTableSpec && (
-							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={onRefillDatabaseSoft}>Refill BPM Table</MenuItem>
+							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={onRefillDatabaseSoft}>
+								Refill BPM Table
+							</MenuItem>
 						)}
 
 						{exercise.bpmTable && exercise.bpmTableSpec && (
-							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeFilled />} onClick={openRefillDatabaseDialog}>Refill BPM Table (include completed)</MenuItem>
+							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeFilled />} onClick={openRefillDatabaseDialog}>
+								Refill BPM Table (include completed)
+							</MenuItem>
+						)}
+
+						{ homepageUrl && (
+							<MenuItem icon={<InfoRegular />} onClick={onHomepageClick}>
+								Metronome Trainer homepage
+							</MenuItem>
 						)}
 					</MenuList>
 				</MenuPopover>

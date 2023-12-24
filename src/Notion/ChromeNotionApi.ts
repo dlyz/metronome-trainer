@@ -1,7 +1,8 @@
 import { ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
+import { fblock, flink, fspan } from "../models/FormattedText";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { NotionApi } from "./NotionApi";
-import { NotionMetronomeTrainer } from "./NotionMetronomeTrainer";
+import { NotionFormattedErrorFactory, NotionMetronomeTrainer } from "./NotionMetronomeTrainer";
 import { notionTabUrlFilter } from "./notionUrl";
 
 
@@ -38,6 +39,19 @@ export async function createChromeNotionMetronomeTrainer(
 
 	return {
 		tabUrlFilter: notionTabUrlFilter,
-		metronomeTrainer: new NotionMetronomeTrainer(notionApi, contentScriptApiFactory),
+		metronomeTrainer: new NotionMetronomeTrainer(notionApi, createNotionPageAccessError, contentScriptApiFactory),
+	}
+}
+
+const createNotionPageAccessError: NotionFormattedErrorFactory = (type, message) => {
+
+	switch (type) {
+		case "noToken": return [fblock
+			`${fspan(message)} Set the token in the ${flink("extensions options page", "metrotrain://extension-options")}.`
+		];
+		case "unauthorized": return [fblock
+			`${fspan(message)} Try to reset Notion integration token in the ${flink("extensions options page", "metrotrain://extension-options")}.`
+		];
+		default: return [fblock`${fspan(message)}`];
 	}
 }
