@@ -149,9 +149,9 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 					<Button appearance="primary" onClick={onNavigateToProjectHomePageClick}>
 						Start with duplicating one of the example exercise pages to your workspace (recommended)
 					</Button>
-					<Button appearance="outline" onClick={onCreateExerciseClick}>
+					{/* <Button appearance="outline" onClick={onCreateExerciseClick}>
 						Create exercise on current page from scratch
-					</Button>
+					</Button> */}
 				</div>);
 			}
 
