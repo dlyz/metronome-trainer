@@ -42,18 +42,15 @@ export function ExercisePageView({ page, settingsStorage, homepageUrl }: {
 	homepageUrl?: string,
 }) {
 
-	const [exercise, setExercise] = useState<Exercise>();
-	const styles =  useStyles();
+	const [exercise, setExercise] = useState<Exercise | undefined>(page.exercise);
+	const styles = useStyles();
 
 	useLayoutEffect(() => {
-		const handler = () => {
-			setExercise(page.exercise);
-		};
-		page.onChanged.add(handler);
 		setExercise(page.exercise);
-		return () => page.onChanged.remove(handler);
+		return page.onChanged.subscribe(() => {
+			setExercise(page.exercise);
+		});
 	}, [page]);
-
 
 
 	const [visible, setVisible] = useStorageValue(settingsStorage, "ExercisePageViewVisible", true);

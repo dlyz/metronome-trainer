@@ -25,8 +25,7 @@ async function start() {
 		const page = observablePage.value;
 
 		if (page) {
-			page.onChanged.add(updatePopup);
-			pageSubscription = () => page.onChanged.remove(updatePopup);
+			pageSubscription = page.onChanged.subscribe(updatePopup);
 		}
 
 		updatePopup();
@@ -64,7 +63,7 @@ async function start() {
 					renderApp(
 						reactRoot,
 						<Popup observablePage={observablePage} settingsPromise={settingsPromise} />,
-						{ transparent: true, }
+						{ transparent: true, darkTheme: page.contentScriptApi?.createIsDarkThemeWatcher() }
 					);
 				}
 			}
@@ -94,14 +93,12 @@ function Popup({ observablePage, settingsPromise }: {
 	settingsPromise: CachedPromise<ComponentSettingsStorage>,
 }) {
 
-	const [page, setPage] = useState<ExercisePage>();
+	const [page, setPage] = useState<ExercisePage | undefined>(observablePage.value);
 	useLayoutEffect(() => {
 		setPage(observablePage.value);
-		const handler = () => {
+		return observablePage.subscribe(() => {
 			setPage(observablePage.value);
-		};
-		observablePage.add(handler);
-		return () => observablePage.remove(handler);
+		});
 	}, [observablePage]);
 
 	const [settingsStorage, setSettingsStorage] = useState(settingsPromise.hasResult ? settingsPromise.result : undefined);

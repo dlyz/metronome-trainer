@@ -50,8 +50,7 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 
 	useLayoutEffect(() => {
 		updateState();
-		observablePage.add(updateState);
-		return () => observablePage.remove(updateState);
+		return observablePage.subscribe(updateState);
 	}, [observablePage]);
 
 	const { page, exercise, accessInfo } = state;
@@ -59,8 +58,7 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 	useLayoutEffect(() => {
 		if (!page) return;
 
-		page.onChanged.add(updateState);
-		return () => page.onChanged.remove(updateState);
+		return page.onChanged.subscribe(updateState);
 	}, [page])
 
 

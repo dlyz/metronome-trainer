@@ -1,4 +1,4 @@
-import { BasicEvent } from "../primitives/Event";
+import { BasicEvent, ObservableValue } from "../primitives/Event";
 import { Exercise, ExerciseDto } from "./Exercise";
 import { FormattedText } from "./FormattedText";
 
@@ -37,6 +37,7 @@ export interface ExercisePageDto {
 
 
 export interface ExercisePageContentScriptApi {
+	createIsDarkThemeWatcher(): ObservableValue<boolean>;
 	readonly hasNextExercise: boolean;
 	toNextExercise(): void;
 }

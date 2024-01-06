@@ -1,4 +1,5 @@
 import { ExercisePageContentScriptApiFactory, ExercisePageContentScriptApiUpdater, ExercisePageDto } from "../models/ExercisePage";
+import { ObservableValue, ObservableValueProxy } from "../primitives/Event";
 import { NotionExercisePageDto, NotionNextExerciseInfo } from "./NotionExercisePageDto";
 import { createNotionPageUrl } from "./notionUrl";
 
@@ -25,6 +26,17 @@ class NotionContentScriptApi implements ExercisePageContentScriptApiUpdater {
 		if (notionDto.nextExerciseInfo) {
 			this.#nextExerciseInfo = notionDto.nextExerciseInfo;
 		}
+	}
+
+	createIsDarkThemeWatcher(): ObservableValue<boolean> {
+		const body = document.body;
+		return new ObservableValueProxy<boolean>(
+			() => body.classList.contains("dark"),
+			handler => {
+				const watcher = new ClassWatcher(body, handler);
+				return () => watcher.dispose();
+			}
+		)
 	}
 
 	get hasNextExercise() { return !!this.#nextExerciseInfo?.nextExercisePageWithAncestorsIds; }
@@ -91,4 +103,31 @@ class NotionContentScriptApi implements ExercisePageContentScriptApiUpdater {
 	}
 
 
+}
+
+
+class ClassWatcher {
+
+	readonly #observer;
+
+    constructor(
+		targetNode: Node,
+		private readonly onClassChanged: () => void
+	) {
+        this.#observer = new MutationObserver(this.mutationCallback)
+        this.#observer.observe(targetNode, { attributes: true })
+    }
+
+
+    dispose() {
+        this.#observer.disconnect()
+    }
+
+    mutationCallback: MutationCallback = mutationsList => {
+        for(let mutation of mutationsList) {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+				this.onClassChanged();
+            }
+        }
+    }
 }

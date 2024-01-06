@@ -117,8 +117,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 
 	useEffect(() => {
 		if (onClick) {
-			clickEvent.add(onClick);
-			return () => clickEvent.remove(onClick);
+			return clickEvent.subscribe(onClick);
 		}
 	}, [onClick]);
 
@@ -336,28 +335,23 @@ const ElapsedView = React.memo(function ({ clickEvent, task }: {
 		partMeasureIndex: 0
 	});
 
-	useLayoutEffect(() => {
-		const handler = (core: MetronomeCore, d: ClickDescriptor) => {
-			if (d.partIndex === core.task?.parts.length) {
-				// want to keep all the info from the last part except for elapsedSeconds.
-				setPosition(p => ({
-					...p,
-					partElapsedSeconds: core.totalElapsedSeconds - p.partStartTime,
-				}));
+	useLayoutEffect(() => clickEvent.subscribe((core, d) => {
+		if (d.partIndex === core.task?.parts.length) {
+			// want to keep all the info from the last part except for elapsedSeconds.
+			setPosition(p => ({
+				...p,
+				partElapsedSeconds: core.totalElapsedSeconds - p.partStartTime,
+			}));
 
-			} else {
-				setPosition({
-					partStartTime: d.partStartTime,
-					partIndex: d.partIndex,
-					partMeasureIndex: d.partMeasureIndex,
-					partElapsedSeconds: core.totalElapsedSeconds - d.partStartTime,
-				});
-			}
-		};
-
-		clickEvent.add(handler);
-		return () => clickEvent.remove(handler);
-	}, []);
+		} else {
+			setPosition({
+				partStartTime: d.partStartTime,
+				partIndex: d.partIndex,
+				partMeasureIndex: d.partMeasureIndex,
+				partElapsedSeconds: core.totalElapsedSeconds - d.partStartTime,
+			});
+		}
+	}), []);
 
 
 	const part = task.parts[position.partIndex];
@@ -466,13 +460,9 @@ const ClickView = React.memo(function ({ clickEvent, options }: {
 	const classes = useClickViewClasses();
 	const accentClasses = useAccentClasses();
 
-	useLayoutEffect(() => {
-		const handler = (core: MetronomeCore, d: ClickDescriptor) => {
-			setState({ beatIndex: d.measureBeatIndex, noteIndex: d.beatNoteIndex, accent: d.accent });
-		};
-		clickEvent.add(handler);
-		return () => clickEvent.remove(handler);
-	}, []);
+	useLayoutEffect(() => clickEvent.subscribe((core, d) => {
+		setState({ beatIndex: d.measureBeatIndex, noteIndex: d.beatNoteIndex, accent: d.accent });
+	}), []);
 
 	const beatsCount = options.timeSignature[0];
 

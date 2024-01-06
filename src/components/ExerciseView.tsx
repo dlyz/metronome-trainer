@@ -148,9 +148,9 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 				exerciseErrors: exercise.errors,
 			});
 		}
-		page.onChanged.add(handler);
+
 		handler();
-		return () => page.onChanged.remove(handler);
+		return page.onChanged.subscribe(handler);
 	}, [page, exercise]);
 
 	const styles = useStyles();
@@ -418,14 +418,10 @@ const useTaskStatusStyles = makeStyles({
 function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: BasicEvent<[MetronomeCore, ClickDescriptor]> }) {
 
 	const [taskTime, setTaskTime] = useState(0);
-	useEffect(() => {
-		const handler = (m: MetronomeCore) => {
-			// rounding here is an optimization: don't have to rerender too often
-			setTaskTime(Math.round(m.totalElapsedSeconds));
-		};
-		clickEvent.add(handler);
-		return () => clickEvent.remove(handler);
-	}, [clickEvent]);
+	useEffect(() => clickEvent.subscribe((m) => {
+		// rounding here is an optimization: don't have to rerender too often
+		setTaskTime(Math.round(m.totalElapsedSeconds));
+	}), [clickEvent]);
 
 	useLayoutEffect(() => {
 		setTaskTime(0);
