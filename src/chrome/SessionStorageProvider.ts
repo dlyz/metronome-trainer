@@ -1,4 +1,4 @@
-import { EventControl } from "./Event";
+import { EventControl } from "../primitives/Event";
 
 
 interface SessionStorageProvider<T> {

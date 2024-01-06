@@ -1,5 +1,5 @@
-import { ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory, ExercisePageDto } from "../models/ExercisePage";
-import { NotionExercisePageDto } from "./NotionExercisePageDto";
+import { ExercisePageContentScriptApiFactory, ExercisePageContentScriptApiUpdater, ExercisePageDto } from "../models/ExercisePage";
+import { NotionExercisePageDto, NotionNextExerciseInfo } from "./NotionExercisePageDto";
 import { createNotionPageUrl } from "./notionUrl";
 
 
@@ -11,23 +11,27 @@ export const notionContentScriptApiFactory: ExercisePageContentScriptApiFactory 
 	return new NotionContentScriptApi(dto);
 }
 
-class NotionContentScriptApi implements ExercisePageContentScriptApi  {
+class NotionContentScriptApi implements ExercisePageContentScriptApiUpdater {
 
-	#dto: NotionExercisePageDto;
+	#nextExerciseInfo?: NotionNextExerciseInfo;
 
 	constructor(dto: ExercisePageDto) {
-		this.#dto = dto as NotionExercisePageDto;
+		const notionDto = dto as NotionExercisePageDto;
+		this.#nextExerciseInfo = notionDto.nextExerciseInfo;
 	}
 
 	update(dto: ExercisePageDto): void {
-		this.#dto = dto as NotionExercisePageDto;
+		const notionDto = dto as NotionExercisePageDto;
+		if (notionDto.nextExerciseInfo) {
+			this.#nextExerciseInfo = notionDto.nextExerciseInfo;
+		}
 	}
 
-	get hasNextExercise() { return !!this.#dto.nextExercisePageId; }
+	get hasNextExercise() { return !!this.#nextExerciseInfo?.nextExercisePageWithAncestorsIds; }
 
 	toNextExercise(): void {
 
-		const { nextExercisePageId } = this.#dto;
+		const nextExercisePageId = this.#nextExerciseInfo?.nextExercisePageWithAncestorsIds;
 		if (!nextExercisePageId) return;
 
 		for (let index = 0; index < nextExercisePageId.length; index++) {

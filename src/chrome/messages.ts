@@ -1,6 +1,5 @@
-import { ExerciseBpmTable } from "../models/BpmTable";
-import type { ExerciseDto, Exercise } from "../models/Exercise";
-import { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
+import type { Exercise } from "../models/Exercise";
+import type { ExercisePage, ExercisePageDto } from "../models/ExercisePage";
 
 export type ServerRequest = never
 | KeepAliveRequest
@@ -44,16 +43,16 @@ export interface ExceptionResponse {
 }
 
 export type InvokeAsyncMethodRequest<
-	TTarget extends (ExercisePage | Exercise | ExerciseBpmTable) & ObjectWithAsyncMethod<TMethod>,
+	TTarget extends (ExercisePage | Exercise) & ObjectWithAsyncMethod<TMethod>,
 	TMethod extends AsyncMethodKeysOf<TTarget> = AsyncMethodKeysOf<TTarget>,
 	TMethodSignature extends TTarget[TMethod] = TTarget[TMethod],
 > =
 {
 	type: "invokeAsyncMethod",
+	pageId: string,
 	target:
 		TTarget extends ExercisePage ? "page" :
 		TTarget extends Exercise ? "exercise" :
-		TTarget extends ExerciseBpmTable ? "bpmTable" :
 		never,
 	method: TMethod,
 	arguments: Parameters<TMethodSignature>,
@@ -65,7 +64,6 @@ export type InvokeAsyncMethodRequest<
 export type AnyInvokeAsyncMethodRequest = never
 	| InvokeAsyncMethodRequest<ExercisePage>
 	| InvokeAsyncMethodRequest<Exercise>
-	| InvokeAsyncMethodRequest<ExerciseBpmTable>
 	;
 
 

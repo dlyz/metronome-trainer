@@ -38,32 +38,35 @@ export function startServer(server: {
 				return;
 			}
 			case "invokeAsyncMethod": {
-				if (tabId) {
-					const page = server.getExercisePage(tabId);
-					if (page) {
-						const request = message;
-						// console.log("invokeAsyncMethod", request);
-						return runAsyncRequest(async () => {
-							const target =
-							request.target === "page" ? page :
-							request.target === "exercise" ? page.exercise :
-							request.target === "bpmTable" ? page.exercise?.bpmTable :
-							undefined;
-
-							if (!target) {
-								console.warn(`unknown or absent target ${request.target}`);
-							}
-
-							const promise = target && ((target as any)[request.method](...request.arguments) as Promise<void>);
-							await promise;
-							sendResponse(undefined);
-
-						}, sendResponse);
-					}
+				if (!tabId) {
+					sendResponse({ type: "error", message: "can not perform invokeAsyncMethod for undefined tabId" } satisfies ExceptionResponse);
+					return;
 				}
 
-				sendResponse(undefined);
-				return;
+				const page = server.getExercisePage(tabId);
+				if (page && page.pageId === message.pageId) {
+					const request = message;
+					// console.log("invokeAsyncMethod", request);
+					return runAsyncRequest(async () => {
+						const target =
+							request.target === "page" ? page :
+							request.target === "exercise" ? page.exercise :
+							undefined;
+
+						if (!target) {
+							sendResponse({ type: "error", message: `unknown or absent target ${request.target}` } satisfies ExceptionResponse);
+							return;
+						}
+
+						const promise = ((target as any)[request.method](...request.arguments) as Promise<void>);
+						await promise;
+						sendResponse(undefined);
+
+					}, sendResponse);
+				} else {
+					sendResponse({ type: "error", message: `page ${message.pageId} not found in tab ${tabId} (with page ${page?.pageId})` } satisfies ExceptionResponse);
+					return;
+				}
 			}
 			default: {
 				const exhaustiveCheck: never = message;

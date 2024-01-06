@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { renderApp } from "./components/App";
-import { ExercisePage, ExercisePageAccessInfo } from "./models/ExercisePage";
+import { ExercisePage, ExercisePageInfo } from "./models/ExercisePage";
 import { Button, Spinner, Text, makeStyles, shorthands } from "@fluentui/react-components";
-import { startClient } from "./chromeTransport/client";
-import { ObservableValueControl } from "./Event";
+import { startClient } from "./chrome/client";
+import { ObservableValueControl } from "./primitives/Event";
 import { Exercise } from "./models/Exercise";
 import { projectHomepageUrl } from "./Notion/notionUrl";
 import { renderFormattedText } from "./components/renderFormattedText";
@@ -28,7 +28,7 @@ const useStyles = makeStyles({
 })
 
 interface PopupState {
-	accessInfo?: ExercisePageAccessInfo,
+	accessInfo?: ExercisePageInfo,
 	page?: ExercisePage,
 	exercise?: Exercise,
 }
@@ -42,7 +42,7 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 	function updateState() {
 		const page = observablePage.value;
 		setState({
-			accessInfo: page?.accessInfo,
+			accessInfo: page?.pageInfo,
 			page,
 			exercise: page?.exercise
 		});
@@ -77,7 +77,7 @@ const Popup = ({observablePage}: {observablePage: ObservableValueControl<Exercis
 				await page.createExercise();
 			} catch(ex) {
 				console.error("creation failed", ex);
-				await page.refreshPage();
+				await page.refresh();
 				return;
 			}
 
@@ -183,7 +183,7 @@ async function initialize() {
 		}
 	});
 
-	observablePage.value?.refreshPage();
+	observablePage.value?.refresh();
 
 	renderApp(root, (
 		<Popup observablePage={observablePage} />

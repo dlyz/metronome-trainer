@@ -1,12 +1,48 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react";
 import { Metronome, MetronomeState, formatTime } from "./Metronome";
-import { Button, Card, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, DialogTrigger, Spinner, Tooltip, makeStyles, shorthands, Text, tokens, mergeClasses, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, Popover, PopoverTrigger, PopoverSurface } from "@fluentui/react-components";
+import {
+	Button,
+	Card,
+	Dialog,
+	DialogActions,
+	DialogBody,
+	DialogContent,
+	DialogSurface,
+	DialogTitle,
+	DialogTrigger,
+	Spinner,
+	Tooltip,
+	makeStyles,
+	shorthands,
+	Text,
+	tokens,
+	mergeClasses,
+	Menu,
+	MenuTrigger,
+	MenuPopover,
+	MenuList,
+	MenuItem,
+	Popover,
+	PopoverTrigger,
+	PopoverSurface,
+} from "@fluentui/react-components";
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
-import { ArrowCircleUpFilled, ArrowSyncFilled, ChevronCircleDownFilled, DocumentSyncRegular, InfoRegular, NextFilled, SettingsFilled, TableSimpleIncludeFilled, TableSimpleIncludeRegular, Warning20Filled, Warning24Filled } from "@fluentui/react-icons";
-import type { ClickDescriptor, Metronome as MetronomeCore, MetronomeTask } from "../metronome";
-import { BasicEvent, EventControl } from "../Event";
+import {
+	ArrowCircleUpFilled,
+	ArrowSyncFilled,
+	ChevronCircleDownFilled,
+	DocumentSyncRegular,
+	InfoRegular,
+	NextFilled,
+	SettingsFilled,
+	TableSimpleIncludeFilled,
+	TableSimpleIncludeRegular,
+	Warning20Filled,
+} from "@fluentui/react-icons";
+import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
+import { BasicEvent, EventControl } from "../primitives/Event";
 import { useInitializedRef } from "./reactHelpers";
 
 export interface ExerciseViewProps {
@@ -64,12 +100,12 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	const [isLoading, setIsLoading] = useState(0);
 
 	async function refillDatabase(removeExcessCompleted: boolean) {
-		await doAsyncCommand(() => page.refreshPage());
+		await doAsyncCommand(() => page.refresh());
 		if (!page.exercise) return;
 		const { bpmTable, bpmTableSpec } = page.exercise;
 		if (bpmTable && bpmTableSpec) {
-			await doAsyncCommand(() => bpmTable.refill(bpmTableSpec, { removeExcessCompleted }));
-			await doAsyncCommand(() => exercise.refreshTask());
+			await doAsyncCommand(() => exercise.refillBpmTable(bpmTableSpec, { removeExcessCompleted }));
+			await doAsyncCommand(() => exercise.refresh());
 		}
 	}
 
@@ -77,11 +113,11 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	const onRefillDatabaseHard = useCallback(() => refillDatabase(true), [page]);
 
 	const onUpdateExerciseClick = useCallback(() => {
-		doAsyncCommand(() => page.refreshPage());
+		doAsyncCommand(() => page.refresh());
 	}, [page]);
 
 	const onUpdateTaskClick = useCallback(() => {
-		doAsyncCommand(() => exercise.refreshTask());
+		doAsyncCommand(() => exercise.refresh());
 	}, [exercise]);
 
 	const onHomepageClick = useCallback(() => {
@@ -144,7 +180,7 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 			{!!isLoading && <><Spinner size="tiny" /><div /></>}
 
-			{ state.exerciseErrors && (
+			{state.exerciseErrors && (
 				<Popover>
 					<PopoverTrigger disableButtonEnhancement>
 						<Tooltip relationship="description" content="Show exercise errors">
@@ -195,7 +231,7 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 							</MenuItem>
 						)}
 
-						{ homepageUrl && (
+						{homepageUrl && (
 							<MenuItem icon={<InfoRegular />} onClick={onHomepageClick}>
 								Metronome Trainer homepage
 							</MenuItem>

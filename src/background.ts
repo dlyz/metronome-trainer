@@ -1,5 +1,5 @@
 import { createChromeNotionMetronomeTrainer } from "./Notion/ChromeNotionApi";
-import { sendExercisePageUpdate, startServer } from "./chromeTransport/background";
+import { sendExercisePageUpdate, startServer } from "./chrome/background";
 import { ExercisePage } from "./models/ExercisePage";
 
 interface TrackedTab {
@@ -15,7 +15,7 @@ class BackgroundExercisePage {
 		readonly page: ExercisePage
 	) {
 		this.page.onChanged.add(this.#handler);
-		this.page.refreshPage();
+		this.page.refresh();
 	}
 
 	#handler = () => {
@@ -85,7 +85,7 @@ async function start() {
 
 		if (pageToRefresh) {
 			console.log(`refreshing page ${pageToRefresh.pageId}. tab change info:`, changeInfo);
-			pageToRefresh.page.refreshPage();
+			pageToRefresh.page.refresh();
 		}
 
 	});

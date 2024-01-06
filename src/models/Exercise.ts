@@ -1,5 +1,7 @@
-import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto, parseBpmTableSpec } from "./BpmTable";
+import { BpmTableSpec, parseBpmTableSpec } from "./BpmTable";
 import { ExerciseMetronomeTask, ExerciseTask, parseExerciseMetronomeTask } from "./ExerciseTask";
+
+
 
 
 export interface Exercise {
@@ -10,18 +12,21 @@ export interface Exercise {
 	readonly bpmTable?: ExerciseBpmTable;
 	readonly errors?: string[];
 
-	refreshTask(): Promise<void>;
+	refresh(): Promise<void>;
 	finishTask(task: ExerciseTask): Promise<void>;
+	refillBpmTable(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }): Promise<void>;
 
 	exportDto(): ExerciseDto;
 }
 
+export interface ExerciseBpmTable {
+}
 
 export interface ExerciseDto {
 	type: "exercise";
 	currentTask?: ExerciseTask,
 	bpmTableSpec?: BpmTableSpec;
-	bpmTable?: ExerciseBpmTableDto;
+	bpmTable?: ExerciseBpmTable;
 	errors?: string[];
 }
 

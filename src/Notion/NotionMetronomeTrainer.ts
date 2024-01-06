@@ -9,16 +9,17 @@ import {
 import jsYaml, { YAMLException } from "js-yaml";
 import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
-import { ExercisePage, ExercisePageAccessInfo, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
+import { ExercisePage, ExercisePageInfo, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
 import { Exercise, ExerciseSettings, parseExerciseSettings } from "../models/Exercise";
 import { ExerciseTask, createExerciseTask } from "../models/ExerciseTask";
 import _ from "lodash";
-import { EventControl } from "../Event";
-import { NotionBpmDatabase, NotionBpmDatabaseItem, refillDatabase } from "./NotionBpmDatabase";
-import { NotionExerciseDto, NotionExercisePageDto } from "./NotionExercisePageDto";
+import { EventControl } from "../primitives/Event";
+import { NotionBpmDatabase, BpmDbItem, refillBpmDb, createBpmDb } from "./NotionBpmDatabase";
+import { NotionExerciseDto, NotionExercisePageDto, NotionNextExerciseInfo } from "./NotionExercisePageDto";
 import { getNotionPageIdFromUrl, projectHomepageUrl } from "./notionUrl";
 import { isObjectNotFound } from "./NotionApi";
 import { FormattedText } from "../models/FormattedText";
+import { AsyncActionGate } from "../primitives/AsyncActionGate";
 
 
 
@@ -44,6 +45,8 @@ export type NotionErrorType = "unknown" | "noToken" | "unauthorized" | "integrat
 export type NotionFormattedErrorFactory = (type: NotionErrorType, message: string) => FormattedText;
 
 
+type RefreshGate = AsyncActionGate<"page" | "exercise">;
+
 class NotionPage implements ExercisePage {
 	constructor(
 		readonly api: NotionApi,
@@ -59,94 +62,104 @@ class NotionPage implements ExercisePage {
 			type: "exercisePage",
 			pageId: this.pageId,
 			sourceType: "notion",
-			accessInfo: this.accessInfo,
+			pageInfo: this.pageInfo,
 			exercise: this.exercise?.exportDto(),
-			nextExercisePageId: this.#nextExercisePageId,
+			nextExerciseInfo: this.#nextExerciseInfo,
 		};
 	}
 
 	readonly onChanged = new EventControl();
 
-	accessInfo?: ExercisePageAccessInfo;
+	pageInfo?: ExercisePageInfo;
 
 	exercise?: NotionExercise;
 
 	contentScriptApi: ExercisePageContentScriptApi | undefined;
 
-	#nextExercisePageId?: string[];
+	#nextExerciseInfo?: NotionNextExerciseInfo;
 
-	// todo: async locks
-	async refreshPage(): Promise<void> {
 
-		console.log(`refreshing page ${this.pageId}`);
+	#refreshGate: RefreshGate = new AsyncActionGate();
 
-		const completeWithNoAccess = (type: NotionErrorType, message: string) => {
-			this.exercise = undefined;
-			this.accessInfo = {
-				hasAccess: false,
-				error: this.errorFactory(type, message),
-			};
+	refresh(): Promise<void> {
 
-			console.log(`no Notion page access (${type}): ` + message);
+		return this.#refreshGate.add("page", async () => {
+
+			console.log(`refreshing page ${this.pageId}`);
+
+			const completeWithNoAccess = (type: NotionErrorType, message: string) => {
+				this.exercise = undefined;
+				this.pageInfo = {
+					hasAccess: false,
+					error: this.errorFactory(type, message),
+				};
+
+				console.log(`no Notion page access (${type}): ` + message);
+				this.onChanged.invoke();
+			}
+
+			if (!this.api.hasToken) {
+				return completeWithNoAccess(
+					"noToken",
+					"There is no Notion integration token provided."
+				);
+			}
+
+			let exercise;
+			try {
+
+				const blocks = await parsePage(this.api, this.pageId);
+				if (!blocks) {
+					return completeWithNoAccess(
+						"integrationNotConnected",
+						"It looks like that the Notion integration is not connected to the current page. Check Notion page connections."
+					);
+				}
+
+				const bpmTable = blocks.bpmDatabase ? new NotionBpmDatabase(this.api, blocks.bpmDatabase) : undefined;
+
+				if (!blocks.settingsBlock && !bpmTable) {
+					exercise = undefined;
+				} else {
+					exercise = this.exercise ?? new NotionExercise(this.api, this.#refreshGate, this.onChanged, blocks);
+					await bpmTable?.updateEmptyItems();
+
+					exercise.doUpdate(blocks, blocks.settingsBlock, bpmTable);
+				}
+
+
+			} catch(ex) {
+				if (isUnauthorized(ex)) {
+					return completeWithNoAccess(
+						"unauthorized",
+						ex.message
+					);
+				} else {
+					completeWithNoAccess(
+						"unknown",
+						`Something went wrong: ${(ex as Error)?.message}.`
+					);
+					throw ex;
+				}
+			}
+
+			this.pageInfo = { hasAccess: true };
+			this.exercise = exercise;
+			console.log(`page ${this.pageId} refreshed, broadcasting event`);
 			this.onChanged.invoke();
-		}
 
-		if (!this.api.hasToken) {
-			return completeWithNoAccess(
-				"noToken",
-				"There is no Notion integration token provided."
-			);
-		}
-
-		let exercise;
-		try {
-
-			const blocks = await parsePage(this.api, this.pageId);
-			if (!blocks) {
-				return completeWithNoAccess(
-					"integrationNotConnected",
-					"It looks like that the Notion integration is not connected to the current page. Check Notion page connections."
-				);
-			}
-
-			const bpmTable = blocks.bpmDatabase ? new NotionBpmDatabase(this.api, blocks.bpmDatabase) : undefined;
-
-			if (!blocks.settingsBlock && !bpmTable) {
-				exercise = undefined;
-			} else {
-				exercise = this.exercise ?? new NotionExercise(this.api, this.onChanged, blocks);
-				await bpmTable?.updateEmptyItems();
-
-				exercise.doUpdate(blocks, blocks.settingsBlock, bpmTable);
-			}
+			this.#findNextExercisePage();
 
 
-		} catch(ex) {
-			if (isUnauthorized(ex)) {
-				return completeWithNoAccess(
-					"unauthorized",
-					ex.message
-				);
-			} else {
-				completeWithNoAccess(
-					"unknown",
-					`Something went wrong: ${(ex as Error)?.message}.`
-				);
-				throw ex;
-			}
-		}
-
-		this.accessInfo = { hasAccess: true };
-		this.exercise = exercise;
-		console.log(`page ${this.pageId} refreshed, broadcasting event`);
-		this.onChanged.invoke();
-
-		this.#findNextExercisePage();
+		});
 	}
 
 	async #findNextExercisePage() {
-		this.#nextExercisePageId = await findNextExercisePage(this.api, this.pageId);
-		console.log(`page ${this.pageId}: next exercise page: ${this.#nextExercisePageId?.[0]}`);
+		const nextExercisePageWithAncestorsIds = await findNextExercisePage(this.api, this.pageId);
+		this.#nextExerciseInfo = {
+			nextExercisePageWithAncestorsIds,
+		};
+		console.log(`page ${this.pageId}: next exercise page: ${nextExercisePageWithAncestorsIds?.[0]}`);
 		this.onChanged.invoke();
 	}
 
@@ -155,15 +168,15 @@ class NotionPage implements ExercisePage {
 
 		await createExerciseStructure(this.api, this.pageId);
 
-		await this.refreshPage();
+		await this.refresh();
 
 		if (!this.exercise) {
 			throw new Error("Settings block have been created, but after the refresh is has not been found.");
 		}
 
 		const spec = this.exercise.bpmTableSpec ?? { groups: [{chunks: [{ from: 60, to: 60, step: 1}]}] };
-		await this.exercise.refillDatabase(spec);
-		await this.refreshPage();
+		await this.exercise.refillBpmTable(spec);
+		await this.refresh();
 	}
 }
 
@@ -172,14 +185,14 @@ class NotionPage implements ExercisePage {
 class NotionExercise implements Exercise {
 	constructor(
 		readonly api: NotionApi,
+		private readonly refreshGate: RefreshGate,
 		readonly onChanged: EventControl,
 		private pageBlocks: PageBlockStructure,
 	) {
 
 	}
 
-
-	private currentTaskBpm?: NotionBpmDatabaseItem;
+	private currentTaskBpm?: BpmDbItem;
 
 	currentTask?: ExerciseTask;
 	bpmTableSpec?: BpmTableSpec;
@@ -187,21 +200,25 @@ class NotionExercise implements Exercise {
 	errors?: string[];
 	taskErrorsStart = 0;
 
-	async refreshTask(): Promise<void> {
+	refresh(): Promise<void> {
 
-		console.log(`refreshing task`);
+		return this.refreshGate.add("exercise", async () => {
 
-		const bpmTableUpdatePromise = this.bpmTable?.updateEmptyItems();
+			console.log(`refreshing task`);
 
-		const settingsBlockId = this.pageBlocks.settingsBlock?.id;
-		const settingsBlockRequestPromise = settingsBlockId && this.api.client.blocks.retrieve({ block_id: settingsBlockId });
+			const bpmTableUpdatePromise = this.bpmTable?.updateEmptyItems();
 
-		const [, newSettingsBlock] = await Promise.all([bpmTableUpdatePromise, settingsBlockRequestPromise]);
+			const settingsBlockId = this.pageBlocks.settingsBlock?.id;
+			const settingsBlockRequestPromise = settingsBlockId && this.api.client.blocks.retrieve({ block_id: settingsBlockId });
 
-		this.doUpdate(undefined, newSettingsBlock as BlockObjectResponse, this.bpmTable);
+			const [, newSettingsBlock] = await Promise.all([bpmTableUpdatePromise, settingsBlockRequestPromise]);
 
-		console.log(`task refreshed, broadcasting event`);
-		this.onChanged.invoke();
+			this.doUpdate(undefined, newSettingsBlock as BlockObjectResponse, this.bpmTable);
+
+			console.log(`task refreshed, broadcasting event`);
+			this.onChanged.invoke();
+
+		});
 	}
 
 
@@ -227,7 +244,7 @@ class NotionExercise implements Exercise {
 			}
 		}
 
-		const currentTaskBpm = bpmTable?.tryGetNextCachedEmptyItem();
+		const currentTaskBpm = bpmTable?.emptyItemSnapshot.tryGetNext();
 		const bpm = currentTaskBpm?.bpm;
 
 		const { metronomeTask, bpmTableSpec } = parseExerciseSettings(
@@ -270,7 +287,7 @@ class NotionExercise implements Exercise {
 	}
 
 
-	#toNextBpm(currentTask: ExerciseTask, nextBpm: NotionBpmDatabaseItem, nextBpmValue: number) {
+	#toNextBpm(currentTask: ExerciseTask, nextBpm: BpmDbItem, nextBpmValue: number) {
 		const errors = this.errors?.slice(0, this.taskErrorsStart) ?? [];
 		const task: ExerciseTask = createExerciseTask({
 			...currentTask,
@@ -285,18 +302,25 @@ class NotionExercise implements Exercise {
 	}
 
 	async finishTask(task: ExerciseTask): Promise<void> {
+		// waiting for concurrent refresh/initialization to complete
+		try {
+			await this.refreshGate.getLastPromise();
+		} catch {
+			// ignoring errors
+		}
+
 		if (this.currentTask && this.currentTaskBpm && task.baseBpm === this.currentTaskBpm.bpm) {
 
 			console.log(`finishing task ${task.baseBpm} bpm`);
 
-			await this.currentTaskBpm.setCurrentDate();
-			const nextBpm = this.bpmTable?.tryGetNextCachedEmptyItem(this.currentTaskBpm);
+			await this.bpmTable?.setItemDateCurrent(this.currentTaskBpm.rawItem.id);
+			const nextBpm = this.bpmTable?.emptyItemSnapshot.tryGetNext(this.currentTaskBpm);
 			if (nextBpm?.bpm !== undefined) {
 				console.log(`task ${task.baseBpm} bpm finished, using cached next task`);
 				this.#toNextBpm(this.currentTask, nextBpm, nextBpm.bpm);
 			} else {
 				console.log(`task finished, refreshing current task`);
-				await this.refreshTask();
+				await this.refresh();
 			}
 
 		} else {
@@ -304,7 +328,7 @@ class NotionExercise implements Exercise {
 		}
 	}
 
-	refillDatabase(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }): Promise<void> {
+	refillBpmTable(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean; }): Promise<void> {
 		if (this.bpmTable) {
 			return this.bpmTable.refill(spec, options);
 		} else {
@@ -313,7 +337,6 @@ class NotionExercise implements Exercise {
 	}
 
 	async #createAndFillDatabase(spec: BpmTableSpec): Promise<void> {
-		console.log("creating a database");
 
 		let parent = this.pageBlocks.pageId;
 		const settingsColumn = this.pageBlocks.settingsColumn;
@@ -324,38 +347,9 @@ class NotionExercise implements Exercise {
 			}
 		}
 
-		// can not use parent because api does not support creation in specific block.
+		const bpmDb = await createBpmDb(this.api, this.pageBlocks.pageId, parent);
 
-		const result = await this.api.client.databases.create({
-			parent: {
-				type: "page_id",
-				page_id: this.pageBlocks.pageId,
-			},
-			is_inline: true,
-			title: [{
-				text: {
-					content: "BPM table"
-				}
-			}],
-			properties: {
-				"BPM": {
-					"type": "title",
-					"title": {}
-				},
-				"Date": {
-					"type": "date",
-					"date": {}
-				},
-				"nBPM": {
-					"type": "formula",
-					"formula": {
-						"expression": "toNumber({{notion:block_property:title}})",
-					}
-				},
-			}
-		});
-
-		await refillDatabase(this.api, result.id, result.properties, spec);
+		await refillBpmDb(this.api, bpmDb.id, bpmDb.properties, spec);
 	}
 
 	exportDto(): NotionExerciseDto {

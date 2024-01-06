@@ -4,69 +4,106 @@ import {
 	NotionApi,
 	getAllPages
 } from "./NotionApi";
-import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto, generateItemsBySpec } from "../models/BpmTable";
+import { BpmTableSpec, generateItemsBySpec } from "../models/BpmTable";
 import { DateTime } from "luxon";
+import { ExerciseBpmTable } from "../models/Exercise";
 
 
-
-export class NotionBpmDatabase implements ExerciseBpmTable {
-
-	readonly #database;
+export class NotionBpmDatabase {
 
 	constructor(
 		readonly api: NotionApi,
-		database: DatabaseObjectResponse
+		readonly database: DatabaseObjectResponse
 	) {
-		this.#database = database;
 	}
 
-	exportDto(): ExerciseBpmTableDto {
-		return { type: "exerciseBpmTable" };
+	exportDto(): ExerciseBpmTable { return {}; }
+
+	get id() { return this.database.id; }
+
+	emptyItemSnapshot = new BpmDbEmptyItemSnapshot([]);
+
+	async updateEmptyItems() {
+		this.emptyItemSnapshot = await getBpmDbEmptyItemSnapshot(this.api, this.id);
 	}
 
-	get id() { return this.#database.id; }
+	setItemDateCurrent(itemId: string) {
+		return setBpmDbItemDateCurrent(this.api, itemId);
+	}
 
-	tryGetNextCachedEmptyItem(prevItem?: NotionBpmDatabaseItem): NotionBpmDatabaseItem | undefined {
-		let item;
+	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }) {
+		return refillBpmDb(this.api, this.database.id, this.database.properties, spec, options);
+	}
+
+}
+
+
+
+export class BpmDbEmptyItemSnapshot {
+
+	constructor(private readonly emptyItems: DatabaseItem[]) {
+	}
+
+	tryGetNext(prevItem?: BpmDbItem): BpmDbItem | undefined {
+		let rawNextItem;
 		if (!prevItem) {
-			item = this.#cachedRawEmptyItems[0];
-		} else if (prevItem.localRequestId === this.#localRequestId) {
-			const index = this.#cachedRawEmptyItems.findIndex(i => i.id === prevItem.rawItem.id);
+			rawNextItem = this.emptyItems[0];
+		} else {
+			const index = this.emptyItems.findIndex(i => i.id === prevItem.rawItem.id);
 			if (index !== -1) {
-				item = this.#cachedRawEmptyItems[index + 1];
+				rawNextItem = this.emptyItems[index + 1];
 			}
 		}
 
-		if (item) {
-			return new NotionBpmDatabaseItem(this.api, this.#localRequestId, item);
+		if (rawNextItem) {
+			return {
+				rawItem: rawNextItem,
+				bpm: getBpm(rawNextItem),
+			};
 		} else {
 			return undefined;
 		}
 	}
-
-	#localRequestId: {} = {};
-	#cachedRawEmptyItems: DatabaseItem[] = [];
-
-	async updateEmptyItems() {
-		const response = await this.api.queryDatabase({
-			database_id: this.#database.id,
-			sorts: [{ property: "nBPM", direction: "ascending" }],
-			filter: {
-				property: "Date",
-				date: {
-					is_empty: true
-				},
-			},
-		})();
-
-		this.#cachedRawEmptyItems = response ?? [];
-	}
-
-	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }) {
-		return refillDatabase(this.api, this.#database.id, this.#database.properties, spec, options);
-	}
-
 }
+
+export interface BpmDbItem {
+	bpm?: number,
+	rawItem: DatabaseItem,
+}
+
+
+
+export async function getBpmDbEmptyItemSnapshot(api: NotionApi, databaseId: string) {
+
+	const response = await api.queryDatabase({
+		database_id: databaseId,
+		sorts: [{ property: "nBPM", direction: "ascending" }],
+		filter: {
+			property: "Date",
+			date: {
+				is_empty: true
+			},
+		},
+	})();
+
+	return new BpmDbEmptyItemSnapshot(response ?? []);
+}
+
+export function setBpmDbItemDateCurrent(api: NotionApi, itemId: string) {
+	return api.client.pages.update({
+		page_id: itemId,
+		properties: {
+			Date: {
+				type: "date",
+				date: {
+					start: DateTime.now().toISODate()!,
+				}
+			}
+		}
+	})
+}
+
+
 
 function getBpm(item: DatabaseItem) {
 	const bpmProp = item.properties["nBPM"];
@@ -84,37 +121,46 @@ function getDate(item: DatabaseItem) {
 	return undefined;
 }
 
-export class NotionBpmDatabaseItem {
 
-	constructor(
-		readonly api: NotionApi,
-		readonly localRequestId: {},
-		readonly rawItem: DatabaseItem
-	) {
-	}
+export function createBpmDb(
+	api: NotionApi,
+	pageId: string,
+	parentId?: string,
+) {
 
-	get bpm() {
-		return getBpm(this.rawItem);
-	}
+	// can not use parent because api does not support creation in specific block.
 
-	setCurrentDate() {
-		this.api.client.pages.update({
-			page_id: this.rawItem.id,
-			properties: {
-				Date: {
-					type: "date",
-					date: {
-						start: DateTime.now().toISODate()!,
-					}
-				}
+	return api.client.databases.create({
+		parent: {
+			type: "page_id",
+			page_id: pageId,
+		},
+		is_inline: true,
+		title: [{
+			text: {
+				content: "BPM table"
 			}
-		})
-	}
-
+		}],
+		properties: {
+			"BPM": {
+				"type": "title",
+				"title": {}
+			},
+			"Date": {
+				"type": "date",
+				"date": {}
+			},
+			"nBPM": {
+				"type": "formula",
+				"formula": {
+					"expression": "toNumber({{notion:block_property:title}})",
+				}
+			},
+		}
+	});
 }
 
-
-export async function refillDatabase(
+export async function refillBpmDb(
 	api: NotionApi,
 	databaseId: string,
 	databaseProperties: DatabaseObjectResponse["properties"],

@@ -1,14 +1,14 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
-import { startClient } from "./chromeTransport/client";
+import { startClient } from "./chrome/client";
 import { Root, createRoot } from "react-dom/client";
 import { renderApp } from "./components/App";
 import { ExercisePage } from "./models/ExercisePage";
-import { ObservableValue, ObservableValueControl } from "./Event";
+import { ObservableValue, ObservableValueControl } from "./primitives/Event";
 import { ExercisePageView } from "./components/ExercisePageView";
 import { notionContentScriptApiFactory } from "./Notion/NotionContentScriptApi";
-import { createChromeComponentSettingsStorage } from "./chromeTransport/ChromeComponentSettingsStorage";
+import { createChromeComponentSettingsStorage } from "./chrome/ChromeComponentSettingsStorage";
 import { ComponentSettingsStorage } from "./components/storage";
-import { CachedPromise, cachePromiseResult } from "./Promise";
+import { CachedPromise, cachePromiseResult } from "./primitives/Promise";
 import { projectHomepageUrl } from "./Notion/notionUrl";
 
 async function start() {

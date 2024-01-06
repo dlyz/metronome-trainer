@@ -1,14 +1,5 @@
 import { bpmLimits, checkBpmValue, checkInt } from "./validation";
 
-export interface ExerciseBpmTable {
-	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean }): Promise<void>;
-
-	exportDto(): ExerciseBpmTableDto;
-}
-
-export interface ExerciseBpmTableDto {
-	type: "exerciseBpmTable";
-}
 
 
 export interface BpmTableSpec {

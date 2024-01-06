@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { ClickDescriptor, ClickEventHandler, Metronome as MetronomeCore, MetronomeOptions, MetronomeTask } from "../metronome";
 import { Button, Card, GriffelStyle, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, makeStyles, mergeClasses, shorthands, tokens } from "@fluentui/react-components";
 import { ArrowResetFilled, PauseFilled, PlayFilled, StopFilled } from "@fluentui/react-icons";
-import { BasicEvent, EventControl } from "../Event";
+import { BasicEvent, EventControl } from "../primitives/Event";
 import { useInitializedRef } from "./reactHelpers";
 
 

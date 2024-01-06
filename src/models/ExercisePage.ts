@@ -1,4 +1,4 @@
-import { BasicEvent } from "../Event";
+import { BasicEvent } from "../primitives/Event";
 import { Exercise, ExerciseDto } from "./Exercise";
 import { FormattedText } from "./FormattedText";
 
@@ -7,7 +7,7 @@ export interface ExercisePage {
 
 	readonly pageId: string;
 
-	readonly accessInfo?: ExercisePageAccessInfo;
+	readonly pageInfo?: ExercisePageInfo;
 
 	readonly exercise?: Exercise;
 
@@ -15,34 +15,39 @@ export interface ExercisePage {
 
 	readonly contentScriptApi: ExercisePageContentScriptApi | undefined;
 
-	refreshPage(): Promise<void>;
+	refresh(): Promise<void>;
 
 	createExercise(): Promise<void>;
 
 	exportDto(): ExercisePageDto;
 }
 
-export interface ExercisePageAccessInfo {
+export interface ExercisePageInfo {
 	hasAccess: boolean,
 	error?: FormattedText,
 }
-
-export interface ExercisePageContentScriptApi {
-	update(dto: ExercisePageDto): void;
-	readonly hasNextExercise: boolean;
-	toNextExercise(): void;
-}
-
-export type ExercisePageContentScriptApiFactory = (dto: ExercisePageDto) => ExercisePageContentScriptApi | undefined;
-
 
 export interface ExercisePageDto {
 	type: "exercisePage";
 	pageId: string;
 	sourceType: string;
-	accessInfo?: ExercisePageAccessInfo;
+	pageInfo?: ExercisePageInfo;
 	exercise?: ExerciseDto;
 }
+
+
+export interface ExercisePageContentScriptApi {
+	readonly hasNextExercise: boolean;
+	toNextExercise(): void;
+}
+
+
+export type ExercisePageContentScriptApiFactory = (dto: ExercisePageDto) => ExercisePageContentScriptApiUpdater | undefined;
+
+export interface ExercisePageContentScriptApiUpdater extends ExercisePageContentScriptApi {
+	update(dto: ExercisePageDto): void;
+}
+
 
 
 

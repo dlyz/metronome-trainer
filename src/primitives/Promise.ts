@@ -21,3 +21,14 @@ export function cachePromiseResult<T>(promise: Promise<T>) {
 		},
 	}
 }
+
+export function createDeferredPromise<T = void>() {
+	let resolve: (value: T | PromiseLike<T>) => void;
+	let reject: (reason?: any) => void;
+	const promise = new Promise<T>((_resolve, _reject) => [resolve, reject] = [_resolve, _reject]);
+	return {
+		promise,
+		resolve: resolve!,
+		reject: reject!,
+	}
+}

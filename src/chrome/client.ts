@@ -1,9 +1,9 @@
 import _ from "lodash";
-import { EventControl } from "../Event";
-import { BpmTableSpec, ExerciseBpmTable, ExerciseBpmTableDto } from "../models/BpmTable";
+import { EventControl } from "../primitives/Event";
+import { BpmTableSpec } from "../models/BpmTable";
 import { Exercise, ExerciseDto } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
-import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory, ExercisePageDto } from "../models/ExercisePage";
+import { ExercisePage, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory, ExercisePageContentScriptApiUpdater, ExercisePageDto } from "../models/ExercisePage";
 import { TabEvent, InvokeAsyncMethodRequest, ExercisePageRequest, KeepAliveRequest, ExceptionResponse, NonTabServerRequest, ServerRequest, TabsRuntimeEvent } from "./messages";
 
 export class TabClient {
@@ -98,31 +98,37 @@ class ProxyExercisePage implements ExercisePage {
 		this.update(dto);
 	}
 
-	contentScriptApi: ExercisePageContentScriptApi | undefined;
+	contentScriptApi: ExercisePageContentScriptApiUpdater | undefined;
 
 	exportDto(): ExercisePageDto { return this.dto;	}
 
 	update(dto: ExercisePageDto) {
-		copyUnchanged(["accessInfo"], this.dto, dto);
+		if (!dto.pageInfo) {
+			// skipping update when the page is still initializing
+			return;
+		}
+
+		copyUnchanged(["pageInfo"], this.dto, dto);
 		this.dto = dto;
-		this.exercise = syncProxy(this.client, ProxyExercise, this.exercise, dto.exercise);
+		this.exercise = syncProxy(this.client, this.pageId, ProxyExercise, this.exercise, dto.exercise);
 		this.contentScriptApi?.update(dto);
 		this.onChanged.invoke();
 	}
 
 	get pageId() { return this.dto.pageId; }
 
-	get accessInfo() { return this.dto.accessInfo; }
+	get pageInfo() { return this.dto.pageInfo; }
 
 	exercise?: ProxyExercise;
 
 	readonly onChanged = new EventControl();
 
-	refreshPage(): Promise<void> {
-		return this.client.sendRequest<InvokeAsyncMethodRequest<ExercisePage, "refreshPage">>({
+	refresh(): Promise<void> {
+		return this.client.sendRequest<InvokeAsyncMethodRequest<ExercisePage, "refresh">>({
 			type: "invokeAsyncMethod",
+			pageId: this.pageId,
 			target: "page",
-			method: "refreshPage",
+			method: "refresh",
 			arguments: [],
 		});
 	}
@@ -130,6 +136,7 @@ class ProxyExercisePage implements ExercisePage {
 	createExercise(): Promise<void> {
 		return this.client.sendRequest<InvokeAsyncMethodRequest<ExercisePage, "createExercise">>({
 			type: "invokeAsyncMethod",
+			pageId: this.pageId,
 			target: "page",
 			method: "createExercise",
 			arguments: [],
@@ -139,8 +146,11 @@ class ProxyExercisePage implements ExercisePage {
 
 class ProxyExercise implements Exercise {
 
-
-	constructor(readonly client: TabClient, public dto: ExerciseDto) {
+	constructor(
+		readonly client: TabClient,
+		readonly pageId: string,
+		public dto: ExerciseDto
+	) {
 		this.update(dto);
 	}
 
@@ -148,25 +158,25 @@ class ProxyExercise implements Exercise {
 
 	update(dto: ExerciseDto) {
 		copyUnchanged(
-			["currentTask", "bpmTableSpec", "errors"],
+			["currentTask", "bpmTableSpec", "errors", "bpmTable"],
 			this.dto,
 			dto,
 		);
 		this.dto = dto;
-		this.bpmTable = syncProxy(this.client, ProxyBpmTable, this.bpmTable, dto.bpmTable);
 	}
 
 	get currentTask() { return this.dto.currentTask; }
 	get bpmTableSpec() { return this.dto.bpmTableSpec; }
 	get errors() { return this.dto.errors; }
 
-	bpmTable?: ProxyBpmTable;
+	get bpmTable() { return this.dto.bpmTable; }
 
-	refreshTask(): Promise<void> {
-		return this.client.sendRequest<InvokeAsyncMethodRequest<Exercise, "refreshTask">>({
+	refresh(): Promise<void> {
+		return this.client.sendRequest<InvokeAsyncMethodRequest<Exercise, "refresh">>({
 			type: "invokeAsyncMethod",
+			pageId: this.pageId,
 			target: "exercise",
-			method: "refreshTask",
+			method: "refresh",
 			arguments: [],
 		});
 	}
@@ -174,30 +184,19 @@ class ProxyExercise implements Exercise {
 	finishTask(task: ExerciseTask): Promise<void> {
 		return this.client.sendRequest<InvokeAsyncMethodRequest<Exercise, "finishTask">>({
 			type: "invokeAsyncMethod",
+			pageId: this.pageId,
 			target: "exercise",
 			method: "finishTask",
 			arguments: [task],
 		});
 	}
-}
 
-class ProxyBpmTable implements ExerciseBpmTable {
-
-	constructor(readonly client: TabClient, public dto: ExerciseBpmTableDto) {
-		this.update(dto);
-	}
-
-	exportDto(): ExerciseBpmTableDto { return this.dto; }
-
-	update(dto: ExerciseBpmTableDto) {
-		this.dto = dto;
-	}
-
-	refill(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean; }): Promise<void> {
-		return this.client.sendRequest<InvokeAsyncMethodRequest<ExerciseBpmTable, "refill">>({
+	refillBpmTable(spec: BpmTableSpec, options?: { removeExcessCompleted?: boolean; }): Promise<void> {
+		return this.client.sendRequest<InvokeAsyncMethodRequest<Exercise, "refillBpmTable">>({
 			type: "invokeAsyncMethod",
-			target: "bpmTable",
-			method: "refill",
+			pageId: this.pageId,
+			target: "exercise",
+			method: "refillBpmTable",
 			arguments: [spec, options],
 		});
 	}
@@ -211,13 +210,14 @@ function copyUnchanged<T, TKey extends keyof T>(keys: TKey[], from: T, to: T) {
 
 function syncProxy<TProxy extends { update(dto: TDto): void }, TDto>(
 	client: TabClient,
-	proxyCtor: { new(client: TabClient, dto: TDto) : TProxy },
+	pageId: string,
+	proxyCtor: { new(client: TabClient, pageId: string, dto: TDto) : TProxy },
 	currentProxy?: TProxy,
 	dto?: TDto
 ) {
 	if (dto) {
 		if (!currentProxy) {
-			currentProxy = new proxyCtor(client, dto);
+			currentProxy = new proxyCtor(client, pageId, dto);
 		} else {
 			currentProxy.update(dto);
 		}
