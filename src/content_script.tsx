@@ -7,7 +7,7 @@ import { ObservableValue, ObservableValueControl } from "./primitives/Event";
 import { ExercisePageView } from "./components/ExercisePageView";
 import { notionContentScriptApiFactory } from "./Notion/NotionContentScriptApi";
 import { createChromeComponentSettingsStorage } from "./chrome/ChromeComponentSettingsStorage";
-import { ComponentSettingsStorage } from "./components/storage";
+import { ComponentSettingsStorage, componentSettingsStorageContext } from "./components/storage";
 import { CachedPromise, cachePromiseResult } from "./primitives/Promise";
 import { projectHomepageUrl } from "./Notion/notionUrl";
 
@@ -108,9 +108,15 @@ function Popup({ observablePage, settingsPromise }: {
 		})();
 	}, [settingsPromise]);
 
+	const ComponentSettingsStorageContextProvider = componentSettingsStorageContext.Provider;
+
 	return <div>
-		{ page && settingsStorage && (
-			<ExercisePageView page={page} settingsStorage={settingsStorage} homepageUrl={projectHomepageUrl} />
+		{ settingsStorage && (
+			<ComponentSettingsStorageContextProvider value={settingsStorage}>
+				{ page && (
+					<ExercisePageView page={page} homepageUrl={projectHomepageUrl} />
+				)}
+			</ComponentSettingsStorageContextProvider>
 		)}
 	</div>;
 }

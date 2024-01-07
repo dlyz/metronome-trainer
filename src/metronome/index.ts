@@ -1,6 +1,6 @@
 import { ClickEventHandler, MetronomePosition, MetronomeTask } from "./core";
 import { MetronomeStopwatch } from "./stopwatch";
-import { StartShiftedPlayer, createSimplePlayer } from "./Player";
+import { createSimplePlayer } from "./Player";
 import { NoteScheduler } from "./NoteScheduler";
 import { MetronomeTaskImpl } from "./measureCalc";
 
@@ -13,6 +13,18 @@ export class Metronome {
 	#stopwatch?: MetronomeStopwatch;
 	#onFinished?: () => void;
 
+	#masterVolume = 1;
+	get masterVolume() { return this.#masterVolume; }
+	set masterVolume(value: number) {
+
+		const normalValue = Math.max(0, Math.min(2, value));
+		const scheduler = this.#scheduler;
+		if (scheduler) {
+			scheduler.player.masterVolume = normalValue;
+		}
+
+		this.#masterVolume = normalValue;
+	}
 
 	restart(
 		task: MetronomeTask,
@@ -25,6 +37,8 @@ export class Metronome {
 
 		this.#onFinished = onFinished;
 		const player = createSimplePlayer();
+		player.masterVolume = this.#masterVolume;
+
 		this.#stopwatch = new MetronomeStopwatch(
 			player,
 			taskImpl,

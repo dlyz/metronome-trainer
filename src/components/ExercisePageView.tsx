@@ -4,7 +4,7 @@ import { ExercisePage } from "../models/ExercisePage";
 import { ExerciseView } from "./ExerciseView";
 import { Button, Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
 import mtIcon from "../../public/icon32.png";
-import { ComponentSettingsStorage, useStorageValue } from "./storage";
+import { useStorageValue } from "./storage";
 
 
 const useStyles = makeStyles({
@@ -36,9 +36,8 @@ const useStyles = makeStyles({
 
 
 
-export function ExercisePageView({ page, settingsStorage, homepageUrl }: {
+export function ExercisePageView({ page, homepageUrl }: {
 	page: ExercisePage,
-	settingsStorage: ComponentSettingsStorage,
 	homepageUrl?: string,
 }) {
 
@@ -53,12 +52,12 @@ export function ExercisePageView({ page, settingsStorage, homepageUrl }: {
 	}, [page]);
 
 
-	const [visible, setVisible] = useStorageValue(settingsStorage, "ExercisePageViewVisible", true);
-	const onHideMetronomeTrainer = useCallback(() => {
+	const [visible, setVisible] = useStorageValue("ExercisePageViewVisible", true);
+	const handleHideMetronomeTrainer = useCallback(() => {
 		setVisible(false);
 	}, []);
 
-	const onShowMetronomeTrainer = useCallback(() => {
+	const handleShowMetronomeTrainer = useCallback(() => {
 		setVisible(true);
 	}, []);
 
@@ -70,7 +69,7 @@ export function ExercisePageView({ page, settingsStorage, homepageUrl }: {
 				<ExerciseView
 					page={page}
 					exercise={exercise}
-					onHideMetronomeTrainer={onHideMetronomeTrainer}
+					onHideMetronomeTrainer={handleHideMetronomeTrainer}
 					homepageUrl={homepageUrl}
 				/>
 			</div>
@@ -79,7 +78,7 @@ export function ExercisePageView({ page, settingsStorage, homepageUrl }: {
 			<div className={styles.collapsedWrapper}>
 				<div className={styles.collapsedRoot}>
 					<Tooltip content="Show Metronome Trainer" relationship="description">
-						<Button onClick={onShowMetronomeTrainer} icon={<img src={mtIcon} />} appearance="subtle" />
+						<Button onClick={handleShowMetronomeTrainer} icon={<img src={mtIcon} />} appearance="subtle" />
 					</Tooltip>
 				</div>
 			</div>

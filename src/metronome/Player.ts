@@ -2,6 +2,8 @@ import { AudioClock } from "./stopwatch";
 
 export interface Player extends AudioClock {
 
+	masterVolume: number;
+
 	readonly currentAudioTime: number;
 
 	/**
@@ -25,6 +27,9 @@ export class StartShiftedPlayer implements Player {
 		readonly startShift: number
 	) {
 	}
+
+	get masterVolume() { return this.player.masterVolume; }
+	set masterVolume(value: number) { this.player.masterVolume = value; }
 
 	get currentAudioTime() {
 		return this.player.currentAudioTime - this.startShift;
@@ -52,6 +57,7 @@ class SimplePlayer implements Player {
 	readonly #audioContext: AudioContext;
 	readonly #oscillator: OscillatorNode;
 	readonly #gain: GainNode;
+	readonly #masterVolumeGain: GainNode;
 	readonly #ac2: AudioContext;
 
 	constructor() {
@@ -64,12 +70,14 @@ class SimplePlayer implements Player {
 		this.#gain = this.#audioContext.createGain();
 		this.#gain.gain.value = 0;
 
+		this.#masterVolumeGain = this.#audioContext.createGain();
+
 		// There's a "node graph"  oscillator->gain->destination
 		this.#oscillator.connect(this.#gain);
-		this.#gain.connect(this.#audioContext.destination);
+		this.#gain.connect(this.#masterVolumeGain);
+		this.#masterVolumeGain.connect(this.#audioContext.destination);
 
 		this.#oscillator.start();
-
 
 
 		// on mobile browsers for some reason metronome is silent
@@ -86,6 +94,10 @@ class SimplePlayer implements Player {
 	}
 
 	get currentAudioTime() { return this.#audioContext.currentTime; }
+
+
+	get masterVolume() { return this.#masterVolumeGain.gain.value; }
+	set masterVolume(value: number) { this.#masterVolumeGain.gain.value = value; }
 
 	suspend() {
 		this.#audioContext.suspend();

@@ -25,6 +25,8 @@ import {
 	Popover,
 	PopoverTrigger,
 	PopoverSurface,
+	Slider,
+	SliderOnChangeData,
 } from "@fluentui/react-components";
 import { Exercise } from "../models/Exercise";
 import { ExerciseTask } from "../models/ExerciseTask";
@@ -37,6 +39,10 @@ import {
 	InfoRegular,
 	NextFilled,
 	SettingsFilled,
+	Speaker0Regular,
+	Speaker1Regular,
+	Speaker2Regular,
+	SpeakerMuteRegular,
 	TableSimpleIncludeFilled,
 	TableSimpleIncludeRegular,
 	Warning20Filled,
@@ -44,6 +50,7 @@ import {
 import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
 import { BasicEvent, EventControl } from "../primitives/Event";
 import { useInitializedRef } from "./reactHelpers";
+import { useStorageValue } from "./storage";
 
 export interface ExerciseViewProps {
 	page: ExercisePage,
@@ -80,9 +87,21 @@ const useStyles = makeStyles({
 	},
 	errorsTooltip: {
 		whiteSpace: "pre-wrap",
+	},
+
+	volumeMenuItem: {
+		"& > span.fui-MenuItem__content ": {
+			display: "flex",
+			flexDirection: "column",
+			marginTop: `calc(-1 * ${tokens.spacingVerticalSNudge})`,
+		}
 	}
 
 });
+
+const maxMasterVolume = 2;
+const defaultMasterVolume = 1;
+const masterVolumeSliderMul = 50;
 
 export const ExerciseView = React.memo(function ({ page, exercise, onHideMetronomeTrainer, homepageUrl }: ExerciseViewProps) {
 
@@ -98,6 +117,11 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	const [state, dispatch] = useReducer(stateReducer, { currentTaskState: MetronomeState.Stopped });
 	const { currentTask, hasNextExercise } = state;
 	const [isLoading, setIsLoading] = useState(0);
+	const [volume, setVolume] = useStorageValue("masterVolume", defaultMasterVolume);
+
+	const handleVolumeChange = useCallback((e: unknown, data: SliderOnChangeData) => {
+		setVolume(data.value / masterVolumeSliderMul);
+	}, [setVolume]);
 
 	async function refillDatabase(removeExcessCompleted: boolean) {
 		await doAsyncCommand(() => page.refresh());
@@ -109,33 +133,33 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 		}
 	}
 
-	const onRefillDatabaseSoft = useCallback(() => refillDatabase(false), [page]);
-	const onRefillDatabaseHard = useCallback(() => refillDatabase(true), [page]);
+	const handleRefillDatabaseSoft = useCallback(() => refillDatabase(false), [page]);
+	const handleRefillDatabaseHard = useCallback(() => refillDatabase(true), [page]);
 
-	const onUpdateExerciseClick = useCallback(() => {
+	const handleUpdateExerciseClick = useCallback(() => {
 		doAsyncCommand(() => page.refresh());
 	}, [page]);
 
-	const onUpdateTaskClick = useCallback(() => {
+	const handleUpdateTaskClick = useCallback(() => {
 		doAsyncCommand(() => exercise.refresh());
 	}, [exercise]);
 
-	const onHomepageClick = useCallback(() => {
+	const handleHomepageClick = useCallback(() => {
 		window.open(homepageUrl, "mozillaTab");
 	}, [homepageUrl]);
 
-	const onMetronomeStateChanged = useCallback((state: MetronomeState) => {
+	const handleMetronomeStateChanged = useCallback((state: MetronomeState) => {
 		dispatch({ type: "setCurrentTaskState", state });
 		if (state === MetronomeState.Finished && currentTask) {
 			doAsyncCommand(() => exercise.finishTask(currentTask));
 		}
 	}, [exercise, currentTask]);
 
-	const onNewTaskClick = useCallback(() => {
+	const handleNewTaskClick = useCallback(() => {
 		dispatch({ type: "useNewTask" });
 	}, []);
 
-	const onNextExerciseClick = useCallback(() => {
+	const handleNextExerciseClick = useCallback(() => {
 		page.contentScriptApi?.toNextExercise();
 	}, [page]);
 
@@ -164,13 +188,13 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 			{state.currentTaskState === MetronomeState.Finished && hasNextExercise && (
 				<Tooltip content="To next exercise" relationship="description">
-					<Button onClick={onNextExerciseClick} icon={<NextFilled />} appearance="primary" />
+					<Button onClick={handleNextExerciseClick} icon={<NextFilled />} appearance="primary" />
 				</Tooltip>
 			)}
 
 			{state.newTask && (
 				<Tooltip content="To actual task" relationship="description">
-					<Button onClick={onNewTaskClick} icon={<ArrowCircleUpFilled />} appearance="primary" />
+					<Button onClick={handleNewTaskClick} icon={<ArrowCircleUpFilled />} appearance="primary" />
 				</Tooltip>
 			)}
 
@@ -198,12 +222,12 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 			{state.currentTaskState !== MetronomeState.Finished && hasNextExercise && (
 				<Tooltip content="To next exercise" relationship="description">
-					<Button onClick={onNextExerciseClick} disabled={!!isLoading} icon={<NextFilled />} appearance="subtle" />
+					<Button onClick={handleNextExerciseClick} disabled={!!isLoading} icon={<NextFilled />} appearance="subtle" />
 				</Tooltip>
 			)}
 
 			<Tooltip content="Update actual task" relationship="description">
-				<Button onClick={onUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
+				<Button onClick={handleUpdateTaskClick} disabled={!!isLoading} icon={<ArrowSyncFilled />} appearance="subtle" />
 			</Tooltip>
 
 			<Menu>
@@ -215,12 +239,12 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 				<MenuPopover>
 					<MenuList>
-						<MenuItem disabled={!!isLoading} icon={<DocumentSyncRegular />} onClick={onUpdateExerciseClick}>
+						<MenuItem disabled={!!isLoading} icon={<DocumentSyncRegular />} onClick={handleUpdateExerciseClick}>
 							Update exercise
 						</MenuItem>
 
 						{exercise.bpmTable && exercise.bpmTableSpec && (
-							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={onRefillDatabaseSoft}>
+							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={handleRefillDatabaseSoft}>
 								Refill BPM Table
 							</MenuItem>
 						)}
@@ -232,10 +256,19 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 						)}
 
 						{homepageUrl && (
-							<MenuItem icon={<InfoRegular />} onClick={onHomepageClick}>
-								Metronome Trainer homepage
+							<MenuItem icon={<InfoRegular />} onClick={handleHomepageClick}>
+								Metronome Trainer homepage (v{chrome.runtime.getManifest().version})
 							</MenuItem>
 						)}
+
+						<MenuItem
+							icon={ volume > maxMasterVolume / 2  ? (<Speaker2Regular />) : volume > 0 ? (<Speaker1Regular />) : (<SpeakerMuteRegular />)}
+							className={styles.volumeMenuItem}
+							persistOnClick
+						>
+							<Slider min={0} max={maxMasterVolume * masterVolumeSliderMul} value={volume * masterVolumeSliderMul} onChange={handleVolumeChange} />
+						</MenuItem>
+
 					</MenuList>
 				</MenuPopover>
 			</Menu>
@@ -258,7 +291,7 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 								<Button appearance="secondary">Close</Button>
 							</DialogTrigger>
 							<DialogTrigger disableButtonEnhancement>
-								<Button appearance="primary" onClick={onRefillDatabaseHard}>I understand, refill</Button>
+								<Button appearance="primary" onClick={handleRefillDatabaseHard}>I understand, refill</Button>
 							</DialogTrigger>
 						</DialogActions>
 					</DialogBody>
@@ -277,8 +310,9 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 			{currentTask && (
 				<Metronome
 					task={currentTask.metronomeTask}
+					masterVolume={volume}
 					resetToken={currentTask}
-					onStateChanged={onMetronomeStateChanged}
+					onStateChanged={handleMetronomeStateChanged}
 					onClick={clickEventInvoker}
 				/>
 			)}

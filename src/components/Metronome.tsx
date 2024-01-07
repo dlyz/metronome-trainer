@@ -9,6 +9,7 @@ import { useInitializedRef } from "./reactHelpers";
 
 export interface MetronomeProps {
 	task: MetronomeTask,
+	masterVolume: number,
 	resetToken?: any,
 	onStateChanged?: (state: MetronomeState) => void,
 	onClick?: (core: MetronomeCore, descriptor: ClickDescriptor) => void;
@@ -113,13 +114,17 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 		return () => core.stop();
 	}, []);
 
-	const { task, onStateChanged, resetToken, onClick } = props;
+	const { task, masterVolume, onStateChanged, resetToken, onClick } = props;
 
 	useEffect(() => {
 		if (onClick) {
 			return clickEvent.subscribe(onClick);
 		}
 	}, [onClick]);
+
+	useEffect(() => {
+		core.masterVolume = masterVolume;
+	}, [masterVolume]);
 
 	const [state, setState] = useState(MetronomeState.Stopped);
 
@@ -131,7 +136,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 		onStateChanged?.(MetronomeState.Finished);
 	}, [onStateChanged, task]);
 
-	const onPlayPause = useCallback(() => {
+	const handlePlayPause = useCallback(() => {
 		if (state === MetronomeState.Playing) {
 			core.pause();
 			setState(MetronomeState.Paused);
@@ -152,7 +157,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 		}
 	}, [state, task, onStateChanged]);
 
-	const onResetClick = useCallback(() => {
+	const handleResetClick = useCallback(() => {
 		core.stop();
 		clickEvent.invoke(core, resetClickDescriptor);
 		setState(MetronomeState.Stopped);
@@ -160,7 +165,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 	}, [onStateChanged]);
 
 	useLayoutEffect(() => {
-		onResetClick();
+		handleResetClick();
 	}, [resetToken, task]);
 
 	const displayPartIndex = Math.min(currentPartIndex, task.parts.length - 1);
@@ -174,7 +179,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 		<Button
 			className={classes.playPauseButton}
 			icon={state === MetronomeState.Playing ? <PauseFilled /> : <PlayFilled />}
-			onClick={onPlayPause}
+			onClick={handlePlayPause}
 			appearance="subtle"
 			shape="circular"
 		/>
@@ -184,7 +189,7 @@ export const Metronome = React.memo(function (props: MetronomeProps) {
 		<Button
 			className={classes.resetButton}
 			icon={<ArrowResetFilled />}
-			onClick={onResetClick}
+			onClick={handleResetClick}
 			appearance="transparent"
 			size="small"
 		/>
