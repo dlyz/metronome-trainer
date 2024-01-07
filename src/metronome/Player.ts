@@ -1,3 +1,4 @@
+import ADSREnvelope from "adsr-envelope";
 import { AudioClock } from "./stopwatch";
 
 export interface Player extends AudioClock {
@@ -118,7 +119,7 @@ class SimplePlayer implements Player {
 	static #getAccentParams(accentValue: 1 | 2 | 3) {
 		const baseFreq = 1000;
 		switch (accentValue) {
-			case 1: return [baseFreq, 0.85];
+			case 1: return [baseFreq, 0.92];
 			// 4 semitones
 			case 2: return [baseFreq + (baseFreq / 12 * 4), 1];
 			// 7 semitones
@@ -126,25 +127,40 @@ class SimplePlayer implements Player {
 		}
 	}
 
+	readonly #noteAdsr = new ADSREnvelope({
+		attackTime: 0.001,
+		decayTime: 0.002,
+		sustainTime: 0.005,
+		releaseTime: 0.003,
+
+		sustainLevel: 0.85,
+		peakLevel: 1,
+	});
+
+	readonly #transitionNoteAdsr = new ADSREnvelope({
+		attackTime: 0.005,
+		decayTime: 0.002,
+		sustainTime: 0.005,
+		releaseTime: 0.003,
+
+		sustainLevel: 0.85,
+		peakLevel: 1,
+	});
+
 	scheduleClick(audioTime: number, accentValue: 1 | 2 | 3) {
 
 		const freqParam = this.#oscillator.frequency;
 		const gainParam = this.#gain.gain;
 
 		const [frequency, volume] = SimplePlayer.#getAccentParams(accentValue);
-		const maxGain = 2;
-		const minGain = 0;
+		const maxGain = 1.25;
 		const gain = maxGain * volume;
 
-		const attack = 0.001;
-		const release = 0.01;
-
 		freqParam.setValueAtTime(frequency, audioTime);
-		gainParam.setValueAtTime(minGain, audioTime);
-		gainParam.linearRampToValueAtTime(gain, audioTime + attack);
-		gainParam.linearRampToValueAtTime(minGain, audioTime + attack + release);
+		this.#noteAdsr.peakLevel = gain;
+		this.#noteAdsr.applyTo(gainParam, audioTime);
 
-		return audioTime + attack + release;
+		return audioTime + this.#noteAdsr.duration;
 	}
 
 	scheduleTransition(audioTime: number, transitionLevel: 1 | 2): number {
@@ -152,23 +168,18 @@ class SimplePlayer implements Player {
 		const gainParam = this.#gain.gain;
 
 		const [frequency, volume] = [transitionLevel === 1 ? 440 : 880, 1];
-		const maxGain = 2;
-		const minGain = 0;
+		const maxGain = 1.25;
 		const gain = maxGain * volume;
 
-		const attack = 0.005;
-		const release = 0.01;
+		this.#transitionNoteAdsr.peakLevel = gain;
 		const pause = transitionLevel === 1 ? 0.08 : 0.04;
 
 		for (let index = 0; index < (transitionLevel === 1 ? 3 : 2); index++) {
 			freqParam.setValueAtTime(frequency, audioTime);
-			gainParam.setValueAtTime(minGain, audioTime);
-			gainParam.linearRampToValueAtTime(gain, audioTime + attack);
-			gainParam.linearRampToValueAtTime(minGain, audioTime + attack + release);
-			audioTime += attack + release + pause;
-		}
 
-		// todo: use package adsr-envelope
+			this.#transitionNoteAdsr.applyTo(gainParam, audioTime);
+			audioTime += this.#transitionNoteAdsr.duration + pause;
+		}
 
 		return audioTime;
 	}

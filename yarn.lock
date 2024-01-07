@@ -2593,6 +2593,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"adsr-envelope@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "adsr-envelope@npm:1.0.0"
+  checksum: 4d3ee51e795c48feabb806bcf232a936641aef7770d56c94cbfdc29b3bbcea2f1c9347120293ac761729c6152a18215ee85c85088adce7463f8398de11690ebe
+  languageName: node
+  linkType: hard
+
 "agent-base@npm:^7.0.2, agent-base@npm:^7.1.0":
   version: 7.1.0
   resolution: "agent-base@npm:7.1.0"
@@ -4698,6 +4705,7 @@ __metadata:
     "@types/react": "npm:^18.2.47"
     "@types/react-dom": "npm:^18.2.18"
     "@types/scheduler": "npm:^0"
+    adsr-envelope: "npm:^1.0.0"
     copy-webpack-plugin: "npm:^9.0.1"
     glob: "npm:^7.1.6"
     jest: "npm:^29.5.0"
@@ -4707,7 +4715,7 @@ __metadata:
     prettier: "npm:^2.2.1"
     react: "npm:^18.2.0"
     react-dom: "npm:^18.2.0"
-    rimraf: "npm:^3.0.2 "
+    rimraf: "npm:^3.0.2"
     scheduler: "npm:0.20.0"
     ts-jest: "npm:^29.1.1"
     ts-loader: "npm:^9.5.1"
@@ -5351,7 +5359,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rimraf@npm:^3.0.2 ":
+"rimraf@npm:^3.0.2":
   version: 3.0.2
   resolution: "rimraf@npm:3.0.2"
   dependencies:
