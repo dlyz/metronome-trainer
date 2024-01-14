@@ -13,8 +13,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@fluentui/react-components": "^9.39.0",
-    "@fluentui/react-icons": "^2.0.222",
+    "@fluentui/react-components": "^9.44.2",
+    "@fluentui/react-icons": "^2.0.224",
     "@notionhq/client": "^2.2.13",
     "adsr-envelope": "^1.0.0",
     "js-yaml": "^4.1.0",
