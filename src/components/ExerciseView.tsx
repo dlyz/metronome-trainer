@@ -27,15 +27,22 @@ import {
 	PopoverSurface,
 	Slider,
 	SliderOnChangeData,
+	SpinButton,
+	PopoverProps,
+	Label,
+	SpinButtonProps,
+	ToggleButton,
 } from "@fluentui/react-components";
 import { Exercise } from "../models/Exercise";
-import { ExerciseTask } from "../models/ExerciseTask";
+import { ExerciseMetronomeTask, ExerciseTask, createExerciseTask } from "../models/ExerciseTask";
 import { ExercisePage } from "../models/ExercisePage";
 import {
 	ArrowCircleUpFilled,
 	ArrowSyncFilled,
 	ChevronCircleDownFilled,
 	DocumentSyncRegular,
+	FormNewRegular,
+	FormRegular,
 	InfoRegular,
 	NextFilled,
 	SettingsFilled,
@@ -51,6 +58,7 @@ import type { ClickDescriptor, Metronome as MetronomeCore } from "../metronome";
 import { BasicEvent, EventControl } from "../primitives/Event";
 import { useInitializedRef } from "./reactHelpers";
 import { useStorageValue } from "./storage";
+import { bpmLimits, coerceBpm } from "../models/validation";
 
 export interface ExerciseViewProps {
 	page: ExercisePage,
@@ -103,6 +111,8 @@ const maxMasterVolume = 2;
 const defaultMasterVolume = 1;
 const masterVolumeSliderMul = 50;
 
+const stopPropagationHandler = (e: React.KeyboardEvent) => e.stopPropagation();
+
 export const ExerciseView = React.memo(function ({ page, exercise, onHideMetronomeTrainer, homepageUrl }: ExerciseViewProps) {
 
 
@@ -115,8 +125,10 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	}).current;
 
 	const [state, dispatch] = useReducer(stateReducer, { currentTaskState: MetronomeState.Stopped });
-	const { currentTask, hasNextExercise } = state;
+	const { currentTask, hasNextExercise, currentTaskCustom, sourceMetronomeTask } = state;
 	const [isLoading, setIsLoading] = useState(0);
+
+
 	const [volume, setVolume] = useStorageValue("masterVolume", defaultMasterVolume);
 
 	const handleVolumeChange = useCallback((e: unknown, data: SliderOnChangeData) => {
@@ -150,23 +162,25 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 	const handleMetronomeStateChanged = useCallback((state: MetronomeState) => {
 		dispatch({ type: "setCurrentTaskState", state });
-		if (state === MetronomeState.Finished && currentTask) {
+		if (state === MetronomeState.Finished && currentTask && !currentTaskCustom) {
 			doAsyncCommand(() => exercise.finishTask(currentTask));
 		}
-	}, [exercise, currentTask]);
+	}, [exercise, currentTask, currentTaskCustom]);
 
-	const handleNewTaskClick = useCallback(() => {
-		dispatch({ type: "useNewTask" });
+	const handleActualTaskClick = useCallback(() => {
+		dispatch({ type: "useActualTask" });
 	}, []);
 
 	const handleNextExerciseClick = useCallback(() => {
 		page.contentScriptApi?.toNextExercise();
 	}, [page]);
 
+
 	useLayoutEffect(() => {
 		const handler = () => {
 			dispatch({
 				type: "pageUpdated",
+				sourceMetronomeTask: exercise.sourceMetronomeTask,
 				task: exercise.currentTask,
 				hasNextExercise: page.contentScriptApi?.hasNextExercise,
 				exerciseErrors: exercise.errors,
@@ -183,23 +197,67 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 	const openRefillDatabaseDialog = useCallback(() => setRefillDatabaseDialogOpened(true), []);
 	const errorsContent = useMemo(() => state.exerciseErrors?.join('\n'), [state.exerciseErrors]);
 
+	const [customTaskOpened, setCustomTaskOpened] = useState(false);
+	const [customTaskBpm, setCustomTaskBpm] = useState(bpmLimits.default);
+	const handleCustomTaskOpenChange = useCallback<NonNullable<PopoverProps["onOpenChange"]>>((e, data) => {
+		setCustomTaskOpened(data.open || false);
+	}, []);
+
+	const handleCustomTaskClick = useCallback(() => {
+		setCustomTaskBpm(currentTask?.baseBpm ?? bpmLimits.default);
+		setCustomTaskOpened(true);
+	}, [currentTask]);
+
+	const handleCustomTaskEditCompleted = useCallback((apply: boolean) => {
+		if (apply && sourceMetronomeTask) {
+			dispatch({
+				type: "useCustomTask",
+				customTask: createExerciseTask({
+					baseBpm: customTaskBpm,
+					sourceMetronomeTask: sourceMetronomeTask
+				}),
+			})
+		}
+
+		setCustomTaskOpened(false);
+	}, [customTaskBpm, sourceMetronomeTask]);
+
+	var nextExercisePrimary = !state.currentTaskCustom && state.currentTaskState === MetronomeState.Finished;
+
 	const buttons = (
 		<div className={styles.buttonPanel}>
 
-			{state.currentTaskState === MetronomeState.Finished && hasNextExercise && (
+			{ state.currentTaskCustom && (
+				<Tooltip content="Custom task" relationship="description">
+					<ToggleButton onClick={handleCustomTaskClick} icon={<FormRegular />} appearance="primary" checked={customTaskOpened} />
+				</Tooltip>
+			)}
+
+			{ nextExercisePrimary && hasNextExercise && (
 				<Tooltip content="To next exercise" relationship="description">
 					<Button onClick={handleNextExerciseClick} icon={<NextFilled />} appearance="primary" />
 				</Tooltip>
 			)}
 
-			{state.newTask && (
+			{ state.actualTask && (
 				<Tooltip content="To actual task" relationship="description">
-					<Button onClick={handleNewTaskClick} icon={<ArrowCircleUpFilled />} appearance="primary" />
+					<Button onClick={handleActualTaskClick} icon={<ArrowCircleUpFilled />} appearance="secondary" />
 				</Tooltip>
 			)}
 
 			<div className={styles.buttonPanelSpace}>
-				<TaskStatus clickEvent={clickEvent} task={currentTask} />
+				<Popover open={customTaskOpened} onOpenChange={handleCustomTaskOpenChange} trapFocus>
+					<PopoverTrigger>
+						<TaskStatus clickEvent={clickEvent} task={currentTask} />
+					</PopoverTrigger>
+					<PopoverSurface>
+						<CustomTaskSelector
+							customTaskBpm={customTaskBpm}
+							setCustomTaskBpm={setCustomTaskBpm}
+							onEditCompleted={handleCustomTaskEditCompleted}
+						/>
+					</PopoverSurface>
+				</Popover>
 			</div>
 
 			{!!isLoading && <><Spinner size="tiny" /><div /></>}
@@ -220,9 +278,9 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 			)}
 
 
-			{state.currentTaskState !== MetronomeState.Finished && hasNextExercise && (
+			{ !nextExercisePrimary && hasNextExercise && (
 				<Tooltip content="To next exercise" relationship="description">
-					<Button onClick={handleNextExerciseClick} disabled={!!isLoading} icon={<NextFilled />} appearance="subtle" />
+					<Button onClick={handleNextExerciseClick} icon={<NextFilled />} appearance="subtle" />
 				</Tooltip>
 			)}
 
@@ -243,19 +301,24 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 							Update exercise
 						</MenuItem>
 
-						{exercise.bpmTable && exercise.bpmTableSpec && (
+						<MenuItem icon={<FormNewRegular />} onClick={handleCustomTaskClick}>
+							Custom task
+						</MenuItem>
+
+
+						{ exercise.bpmTable && exercise.bpmTableSpec && (
 							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeRegular />} onClick={handleRefillDatabaseSoft}>
 								Refill BPM Table
 							</MenuItem>
 						)}
 
-						{exercise.bpmTable && exercise.bpmTableSpec && (
+						{ exercise.bpmTable && exercise.bpmTableSpec && (
 							<MenuItem disabled={!!isLoading} icon={<TableSimpleIncludeFilled />} onClick={openRefillDatabaseDialog}>
 								Refill BPM Table (include completed)
 							</MenuItem>
 						)}
 
-						{homepageUrl && (
+						{ homepageUrl && (
 							<MenuItem icon={<InfoRegular />} onClick={handleHomepageClick}>
 								Metronome Trainer homepage (v{chrome.runtime.getManifest().version})
 							</MenuItem>
@@ -335,70 +398,79 @@ export const ExerciseView = React.memo(function ({ page, exercise, onHideMetrono
 
 
 interface State {
+	sourceMetronomeTask?: ExerciseMetronomeTask,
 	currentTask?: ExerciseTask,
-	newTask?: ExerciseTask,
+	currentTaskCustom?: boolean,
+	actualTask?: ExerciseTask,
 	currentTaskState: MetronomeState,
 	hasNextExercise?: boolean,
 	exerciseErrors?: string[],
 }
 
-type Action = never
-	| {
-		type: "useNewTask",
-	}
-	| {
+type ExerciseUpdate = {
+	sourceMetronomeTask?: ExerciseMetronomeTask,
+	task?: ExerciseTask,
+	hasNextExercise: boolean | undefined,
+	exerciseErrors?: string[],
+}
+
+type Action =
+	{
+		type: "useActualTask",
+	} | ExerciseUpdate & {
 		type: "pageUpdated",
-		task?: ExerciseTask,
-		hasNextExercise: boolean | undefined,
-		exerciseErrors?: string[],
-	}
-	| {
+	} | {
 		type: "setCurrentTaskState",
 		state: MetronomeState,
+	} | {
+		type: "useCustomTask",
+		customTask: ExerciseTask,
 	}
 	;
 
 function stateReducer(state: State, action: Action): State {
 	switch (action.type) {
-		case "useNewTask": {
-			if (state.newTask) {
-				return setCurrentTask(state.newTask);
+		case "useActualTask": {
+			if (state.actualTask) {
+				return setCurrentTask(state, state.actualTask);
 			} else {
 				return state;
 			}
 		}
 		case "setCurrentTaskState": {
-
-			//console.log("task state: " + MetronomeState[action.state]);
 			return {
 				...state,
 				currentTaskState: action.state,
 			};
 		}
 		case "pageUpdated": {
-			if (state.currentTask === action.task) {
-				// action used for exercise update, so we cannot reuse old state
+			if (state.currentTaskCustom) {
+				return updateExercise(state, action);
+			} else if (state.currentTask === action.task) {
 				return {
-					...state,
-					newTask: undefined,
-					hasNextExercise: action.hasNextExercise,
-					exerciseErrors: action.exerciseErrors,
+					...updateExercise(state, action),
+					actualTask: undefined,
 				};
 			}
 			else if (state.currentTaskState === MetronomeState.Stopped) {
 				return {
-					...setCurrentTask(action.task),
-					hasNextExercise: action.hasNextExercise,
-					exerciseErrors: action.exerciseErrors,
+					...setCurrentTask(
+						updateExercise(state, action),
+						action.task
+					)
 				};
 			} else {
-				return {
-					...state,
-					newTask: action.task,
-					hasNextExercise: action.hasNextExercise,
-					exerciseErrors: action.exerciseErrors,
-				};
+				return updateExercise(state, action);
 			}
+		}
+
+		case "useCustomTask": {
+			return {
+				...state,
+				actualTask: state.actualTask ?? (state.currentTaskCustom ? undefined : state.currentTask),
+				currentTask: action.customTask,
+				currentTaskCustom: true,
+			};
 		}
 
 		default: {
@@ -407,12 +479,23 @@ function stateReducer(state: State, action: Action): State {
 		}
 	}
 
-	function setCurrentTask(task: ExerciseTask | undefined) {
+	function setCurrentTask(state: State, task: ExerciseTask | undefined): State {
 		return {
 			...state,
 			currentTask: task,
 			currentTaskState: MetronomeState.Stopped,
-			newTask: undefined,
+			actualTask: undefined,
+			currentTaskCustom: false,
+		};
+	}
+
+	function updateExercise(state: State, exercise: ExerciseUpdate): State {
+		return {
+			...state,
+			sourceMetronomeTask: exercise.sourceMetronomeTask,
+			actualTask: exercise.task,
+			hasNextExercise: exercise.hasNextExercise,
+			exerciseErrors: exercise.exerciseErrors,
 		};
 	}
 }
@@ -449,7 +532,7 @@ const useTaskStatusStyles = makeStyles({
 });
 
 
-function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: BasicEvent<[MetronomeCore, ClickDescriptor]> }) {
+const TaskStatus = React.forwardRef(function ({ task, clickEvent }: { task?: ExerciseTask, clickEvent: BasicEvent<[MetronomeCore, ClickDescriptor]> }, ref: React.ForwardedRef<HTMLDivElement>) {
 
 	const [taskTime, setTaskTime] = useState(0);
 	useEffect(() => clickEvent.subscribe((m) => {
@@ -464,15 +547,18 @@ function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: Bas
 	const classes = useTaskStatusStyles();
 
 
-	if (!task) return <Text size={400}>No incomplete tasks found</Text>;
+	if (!task) return <div ref={ref}>
+		<Text size={400}>No incomplete tasks found</Text>
+	</div>
+
 
 	const bpmChanges = task.metronomeTask.parts.some(p => p.bpm !== task.baseBpm);
 	const multipart = task.metronomeTask.parts.length > 1;
 
 	if (!bpmChanges && !multipart) {
-		return null;
+		return <div className={classes.root} ref={ref} />;
 	} else {
-		return <div className={classes.root}>
+		return <div className={classes.root} ref={ref}>
 			{bpmChanges && (<>
 				<div className={classes.taskHeader}>
 					<Text size={400} >Task: {task.baseBpm} bpm</Text>
@@ -485,4 +571,88 @@ function TaskStatus({ task, clickEvent }: { task?: ExerciseTask, clickEvent: Bas
 			<div className={classes.border} />
 		</div>
 	}
+});
+
+
+
+
+const useCustomTaskSelectorStyles = makeStyles({
+	root: {
+		display: "flex",
+		rowGap: "8px",
+		flexDirection: "column",
+	},
+	buttons: {
+		display: "flex",
+
+		"& > div": {
+			...shorthands.flex(1),
+		},
+	}
+});
+
+function CustomTaskSelector({ customTaskBpm, setCustomTaskBpm, onEditCompleted } : {
+	customTaskBpm: number,
+	setCustomTaskBpm: (value: number) => void,
+	onEditCompleted: (apply: boolean) => void,
+}) {
+
+	const styles = useCustomTaskSelectorStyles();
+
+	const handleCustomTaskBpmChange = useCallback<NonNullable<SpinButtonProps["onChange"]>>((e, data) => {
+		if (data.value !== undefined) {
+			setCustomTaskBpm(data.value ?? bpmLimits.default);
+		} else if (data.displayValue !== undefined) {
+			const value = Number.parseFloat(data.displayValue);
+			setCustomTaskBpm(coerceBpm(value));
+		}
+	}, []);
+
+	const handleInputKeyUp = useCallback((e: React.KeyboardEvent) => {
+		if (e.key === "Enter") {
+			// have to handle up and not down, because we want change to be handled first
+			onEditCompleted(true);
+		}
+	}, [onEditCompleted]);
+
+	const handleEditorKeyDown = useCallback((e: React.KeyboardEvent) => {
+		stopPropagationHandler(e);
+		if (e.key === "Escape") {
+			onEditCompleted(false);
+		}
+	}, [onEditCompleted]);
+
+	const handleApplyClick = useCallback(() => {
+		onEditCompleted(true);
+	}, [onEditCompleted]);
+
+	const handleCancelClick = useCallback(() => {
+		onEditCompleted(false);
+	}, [onEditCompleted]);
+
+	{/* Notion will handle keys if we don't stop propagating */}
+	return <div className={styles.root} onKeyDown={handleEditorKeyDown} onKeyUp={stopPropagationHandler}>
+		<div>
+			<Label>Custom task base BPM</Label>
+			<div>
+				<SpinButton
+					value={customTaskBpm}
+					onChange={handleCustomTaskBpmChange}
+					onKeyUp={handleInputKeyUp}
+					step={1}
+					precision={1}
+					min={bpmLimits.min}
+					max={bpmLimits.max}
+				/>
+			</div>
+		</div>
+		<div className={styles.buttons}>
+			<div>
+				<Button appearance="primary" onClick={handleApplyClick}>Apply</Button>
+			</div>
+			<div>
+				<Button onClick={handleCancelClick}>Cancel</Button>
+			</div>
+		</div>
+	</div>
 }

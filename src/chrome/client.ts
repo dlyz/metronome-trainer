@@ -158,13 +158,14 @@ class ProxyExercise implements Exercise {
 
 	update(dto: ExerciseDto) {
 		copyUnchanged(
-			["currentTask", "bpmTableSpec", "errors", "bpmTable"],
+			["sourceMetronomeTask", "currentTask", "bpmTableSpec", "errors", "bpmTable"],
 			this.dto,
 			dto,
 		);
 		this.dto = dto;
 	}
 
+	get sourceMetronomeTask() { return this.dto.sourceMetronomeTask; }
 	get currentTask() { return this.dto.currentTask; }
 	get bpmTableSpec() { return this.dto.bpmTableSpec; }
 	get errors() { return this.dto.errors; }

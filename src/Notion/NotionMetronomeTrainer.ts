@@ -11,7 +11,7 @@ import { BpmTableSpec } from "../models/BpmTable";
 import { MetronomeTrainer } from "../models/MetronomeTrainer";
 import { ExercisePage, ExercisePageInfo, ExercisePageContentScriptApi, ExercisePageContentScriptApiFactory } from "../models/ExercisePage";
 import { Exercise, ExerciseSettings, parseExerciseSettings } from "../models/Exercise";
-import { ExerciseTask, createExerciseTask } from "../models/ExerciseTask";
+import { ExerciseMetronomeTask, ExerciseTask, createExerciseTask } from "../models/ExerciseTask";
 import _ from "lodash";
 import { EventControl } from "../primitives/Event";
 import { NotionBpmDatabase, BpmDbItem, refillBpmDb, createBpmDb } from "./NotionBpmDatabase";
@@ -194,10 +194,11 @@ class NotionExercise implements Exercise {
 
 	private currentTaskBpm?: BpmDbItem;
 
-	currentTask?: ExerciseTask;
-	bpmTableSpec?: BpmTableSpec;
-	bpmTable?: NotionBpmDatabase;
-	errors?: string[];
+	sourceMetronomeTask: ExerciseMetronomeTask | undefined;
+	currentTask: ExerciseTask | undefined;
+	bpmTableSpec: BpmTableSpec | undefined;
+	bpmTable: NotionBpmDatabase | undefined;
+	errors: string[] | undefined;
 	taskErrorsStart = 0;
 
 	refresh(): Promise<void> {
@@ -278,9 +279,13 @@ class NotionExercise implements Exercise {
 				this.pageBlocks = blockStructure;
 			}
 
+			if (!_.isEqual(this.sourceMetronomeTask, metronomeTask)) {
+				this.sourceMetronomeTask = metronomeTask;
+			}
 			if (!_.isEqual(this.currentTask, task)) {
 				this.currentTask = task;
 			}
+
 			this.currentTaskBpm = currentTaskBpm;
 
 		})();
@@ -355,6 +360,7 @@ class NotionExercise implements Exercise {
 	exportDto(): NotionExerciseDto {
 		return {
 			type: "exercise",
+			sourceMetronomeTask: this.sourceMetronomeTask,
 			currentTask: this.currentTask,
 			errors: this.errors,
 			bpmTableSpec: this.bpmTableSpec,

@@ -6,11 +6,12 @@ import { ExerciseMetronomeTask, ExerciseTask, parseExerciseMetronomeTask } from 
 
 export interface Exercise {
 
-	readonly currentTask?: ExerciseTask;
+	readonly sourceMetronomeTask: ExerciseMetronomeTask | undefined;
+	readonly currentTask: ExerciseTask | undefined;
 
-	readonly bpmTableSpec?: BpmTableSpec;
-	readonly bpmTable?: ExerciseBpmTable;
-	readonly errors?: string[];
+	readonly bpmTableSpec: BpmTableSpec | undefined;
+	readonly bpmTable: ExerciseBpmTable | undefined;
+	readonly errors: string[] | undefined;
 
 	refresh(): Promise<void>;
 	finishTask(task: ExerciseTask): Promise<void>;
@@ -24,6 +25,7 @@ export interface ExerciseBpmTable {
 
 export interface ExerciseDto {
 	type: "exercise";
+	sourceMetronomeTask?: ExerciseMetronomeTask;
 	currentTask?: ExerciseTask,
 	bpmTableSpec?: BpmTableSpec;
 	bpmTable?: ExerciseBpmTable;
